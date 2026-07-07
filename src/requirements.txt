@@ -1,0 +1,7 @@
+jsonschema==4.23.0
+pandas==2.2.2
+PyYAML==6.0.2
+requests==2.32.3
+rocrate>=0.15.0
+mlcroissant
+

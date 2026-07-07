@@ -1,0 +1,2 @@
+# JupyterLab or equivalent is needed for the notebooks
+jupyterlab
