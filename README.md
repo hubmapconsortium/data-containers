@@ -1,13 +1,7 @@
-# hubmap-template
-Generic language-agnostic repo template with suggestions on best-practices:
-As HuBMAP matures we will benefit from using standard software-engineering practices.
-Because HuBMAP development is split across multiple repos, from multiple institutions,
-with some of the work being done by trainees who might only be around for a short time,
-establishing shared practices and structures is particularly critical to maintain a high quality code base over time.
-
-Once you've made a copy of this template, make a feature branch, and work through the TODOs.
-If there's something you don't want to handle on the first pass, consider filing an issue for it. 
-
+# data-containers
+This repository contains tools for creating standardized data containers in formats like
+[RO-Crate](https://www.researchobject.org/ro-crate/), [BagIt](https://datatracker.ietf.org/doc/html/rfc8493)
+and [Croissant](https://mlcommons.org/working-groups/data/croissant/).
 - [ ] **TODO**: Fill in the README sections below the `<hr>` at the bottom of this page.
 - Github settings:
   - [ ] **TODO**: Under "General", turn off github features you don't need, and turn on others that aren't the default. Suggestions:
@@ -33,30 +27,3 @@ If there's something you don't want to handle on the first pass, consider filing
 - Github CI:
   - [ ] **TODO**: Under `.github/workflows`, update the provided examples as appropriate for your toolchain. Suggest starting with linting and tests. Suggest having each check as a separate workflow, so if there is a failure, its easy to tell at a glance what it was.
 
-<hr>
-
-# **TODO**: your-repo-name-here
-
-**TODO**: Short description; Also fill in the repo description in Github so there's something beyond just the repo name in the top-level list of repos.
-
-**TODO**: Describe how this relates to the rest of HuBMAP, and in particular how it relates to the Portal. Is this a workflow that prepares data for the portal? Is it an API that will be used by the portal? Is this an ancillary web site the portal should link out to? Please make sure the Portal maintainers are aware of the integration plans.
-
-**TODO**: Diagram: Is there any part of the architecture or process that is easier to understand as a picture? Options:
-
-```mermaid
-graph LR
-    mermaid
-    mermaid --> md[This is in the markdown!]
-    mermaid --> link[Links are supported!]
-    click link href "https://mermaid-js.github.io/mermaid-live-editor/"
-    mermaid --> limit[Diagram types are constrained!]
-```
-
-[![Google Drawing](https://docs.google.com/drawings/d/e/2PACX-1vQgMhQbVUk_PLGo8chvxONDchqtf7OwvKS0QUiihv4JhDy4-IuF0m5GZWl3nMwLB7CuJ5feDbgQPh73/pub?w=350)](https://docs.google.com/drawings/d/1rMHDXndMnuXXtqf6s387_Pa-T0UfgZCnenFOvQ5dsdQ/edit)
-
-![draw.io](example-for-hubmap-template-repo.drawio.svg)
-
-**TODO**: Think about the audiences for your repo and structure the documentation accordingly, proceeding from outsiders to insiders:
-- Users: Where is this deployed? Is there separate API documentation? How should bugs be reported?
-- New developers: How do I set up a dev environment? How do I prepare a PR?
-- Maintainers: How are releases and deployments managed?
