@@ -3,5 +3,7 @@ pandas==2.2.2
 PyYAML==6.0.2
 requests==2.32.3
 rocrate>=0.15.0
+bagit
 mlcroissant
-
+git+https://github.com/hubmapconsortium/cwltool.git@docker-gpu#egg=cwltool
+setuptools<82
