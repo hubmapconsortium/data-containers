@@ -11,6 +11,7 @@ from rocrate.model.person import Person
 import bagit
 from datetime import datetime, timezone
 from typing import Any, List
+from collections import defaultdict
 
 ENTITY_API = "https://entity.api.hubmapconsortium.org"
 ASSETS_API = "https://assets.hubmapconsortium.org"
@@ -123,12 +124,8 @@ def build_ia_entity(crate: ROCrate) -> ContextEntity:
 
 def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[ContextEntity]:
     ent_l = []
-    pi_entity = None
-    pi_l = []
-    contact_entity = None
-    contact_l = []
-    ia_entity = None
-    ia_l = []
+    role_d = {}
+    role_list_d = defaultdict(list)
     for contrib in contributors:
         props = {
             "@type": "Person",
@@ -137,32 +134,21 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
         }
         person = Person(crate, identifier=props["@id"], properties=props)
         add_to_entities = True
-        if contrib["is_principal_investigator"].lower() == "yes":
-            if pi_entity is None:
-                pi_entity = build_pi_entity(crate)
-            pi_l.append(crate.add(person))
-            add_to_entities = False
-        if contrib["is_contact"].lower() == "yes":
-            if contact_entity is None:
-                contact_entity = build_contact_entity(crate)
-            contact_l.append(crate.add(person))
-            add_to_entities = False
-        if contrib["is_operator"].lower() == "yes":
-            if ia_entity is None:
-                ia_entity = build_ia_entity(crate)
-            ia_l.append(crate.add(person))
-            add_to_entities = False
+        for match_key, builder in [
+            ("is_principal_investigator", build_pi_entity),
+            ("is_contact", build_contact_entity),
+            ("is_operator", build_ia_entity),
+        ]:
+            if contrib[match_key].lower() == "yes":
+                entity = role_d.get(match_key) or builder(crate)
+                role_d.setdefault(match_key, entity)
+                role_list_d[match_key].append(crate.add(person))
+                add_to_entities = False
         if add_to_entities:
             ent_l.append(person)
-    if pi_l:
-        pi_entity["contributor"] = pi_l
-        ent_l.append(pi_entity)
-    if contact_l:
-        contact_entity["contributor"] = contact_l
-        ent_l.append(contact_entity)
-    if ia_l:
-        ia_entity["contributor"] = ia_l
-        ent_l.append(ia_entity)
+    for match_key in role_list_d:
+        role_d[match_key]["contributor"] = role_list_d[match_key]
+        ent_l.append(role_d[match_key])
     return ent_l
 
 
