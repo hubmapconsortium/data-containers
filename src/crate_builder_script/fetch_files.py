@@ -7,9 +7,10 @@ import os
 import rocrate
 from rocrate.rocrate import ROCrate
 from rocrate.model.contextentity import ContextEntity
+from rocrate.model.person import Person
 import bagit
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, List
 
 ENTITY_API = "https://entity.api.hubmapconsortium.org"
 ASSETS_API = "https://assets.hubmapconsortium.org"
@@ -19,6 +20,8 @@ DEFAULT_OUTPUT_PATH = "/tmp/crate_test"
 
 # Externally defined identifiers
 NIH_URI = "https://ror.org/01cwqze88"
+ORCID_URI = "https://orcid.org"
+OBOLIB_URI = "http://purl.obolibrary.org/obo"
 
 #TARGET_ID = "HBM567.VCBK.562"
 #TARGET_ID = "HBM487.HJZB.546"
@@ -38,7 +41,7 @@ def fetch_entity_info(target_id: str) -> dict[str, Any]:
     print("DIRECT ANCESTORS")
     pprint(ds_info["direct_ancestors"], depth=2)
     print("CONTRIBUTORS")
-    pprint(ds_info.get("contributors", []), depth=1)
+    pprint(ds_info.get("contributors", []), depth=2)
     return ds_info
 
 
@@ -77,6 +80,91 @@ def build_license_entity(crate: ROCrate) -> ContextEntity:
     return ContextEntity(crate, identifier=license_props["url"],
                          properties=license_props)
     
+
+def build_pi_entity(crate: ROCrate) -> ContextEntity:
+    props = {
+        "@id": "#role-principal-investigator",
+        "@type": "Role",
+        "roleName": "Principal Investigator",
+        "description": "Responsible for overall scientific direction and oversight.",
+        "url": f"{OBOLIB_URI}/OBI_0000103"
+    }
+    return ContextEntity(crate, identifier=props["@id"], properties=props)
+    
+
+def build_contact_entity(crate: ROCrate) -> ContextEntity:
+    props = {
+        "@id": "#role-contact",
+        "@type": "Role",
+        "roleName": "ContactRepresentative",
+        "description": ("A role inhering in a person who represents an institution,"
+                        " organization, or service provider and realized when"
+                        " communication is directed at them about the entity they"
+                        " represent."),
+        "url": f"{OBOLIB_URI}/OBI_0001687"
+    }
+    return ContextEntity(crate, identifier=props["@id"], properties=props)
+    
+
+def build_ia_entity(crate: ROCrate) -> ContextEntity:
+    props = {
+        "@id": "#role-investigative-agent",
+        "@type": "Role",
+        "roleName": "InvestigativeAgent",
+        "description": ("A role borne by an entity and that is realized"
+                        " in a process that is part of an investigation"
+                        " in which an objective is achieved. These processes"
+                        " include, among others: planning, overseeing,"
+                        " funding, reviewing."),
+        "url": f"{OBOLIB_URI}/OBI_0000202"
+    }
+    return ContextEntity(crate, identifier=props["@id"], properties=props)
+    
+
+def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[ContextEntity]:
+    ent_l = []
+    pi_entity = None
+    pi_l = []
+    contact_entity = None
+    contact_l = []
+    ia_entity = None
+    ia_l = []
+    for contrib in contributors:
+        props = {
+            "@type": "Person",
+            "@id": f"{ORCID_URI}/{contrib['orcid']}",
+            "name": contrib["display_name"]
+        }
+        person = Person(crate, identifier=props["@id"], properties=props)
+        add_to_entities = True
+        if contrib["is_principal_investigator"].lower() == "yes":
+            if pi_entity is None:
+                pi_entity = build_pi_entity(crate)
+            pi_l.append(crate.add(person))
+            add_to_entities = False
+        if contrib["is_contact"].lower() == "yes":
+            if contact_entity is None:
+                contact_entity = build_contact_entity(crate)
+            contact_l.append(crate.add(person))
+            add_to_entities = False
+        if contrib["is_operator"].lower() == "yes":
+            if ia_entity is None:
+                ia_entity = build_ia_entity(crate)
+            ia_l.append(crate.add(person))
+            add_to_entities = False
+        if add_to_entities:
+            ent_l.append(person)
+    if pi_l:
+        pi_entity["contributor"] = pi_l
+        ent_l.append(pi_entity)
+    if contact_l:
+        contact_entity["contributor"] = contact_l
+        ent_l.append(contact_entity)
+    if ia_l:
+        ia_entity["contributor"] = ia_l
+        ent_l.append(ia_entity)
+    return ent_l
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -118,6 +206,11 @@ def main() -> None:
 
     crate.root_dataset["license"] = crate.add(build_license_entity(crate))
     crate.root_dataset["funder"] = crate.add(build_funder_entity(crate))
+    if contributors := ds_info.get("contributors"):
+        crate.add(build_pi_entity(crate))
+        ent_l = build_contributors(crate, contributors)
+        [crate.add(ent) for ent in ent_l]
+        crate.root_dataset["contributor"] = ent_l
 
     if "files" in ds_info:
         # This is a derived dataset- include only data products and qa_qc files
