@@ -9,6 +9,7 @@ from rocrate.rocrate import ROCrate
 from rocrate.model.contextentity import ContextEntity
 import bagit
 from datetime import datetime, timezone
+from typing import Any
 
 ENTITY_API = "https://entity.api.hubmapconsortium.org"
 ASSETS_API = "https://assets.hubmapconsortium.org"
@@ -25,7 +26,7 @@ NIH_URI = "https://ror.org/01cwqze88"
 AUTH_TOK = os.environ["AUTH_TOK"]
 
 
-def fetch_entity_info(target_id):
+def fetch_entity_info(target_id: str) -> dict[str, Any]:
     #resp = requests.get(ENTITY_API + f"/entities/{target_id}?exclude=direct_ancestors")
     resp = requests.get(ENTITY_API + f"/entities/{target_id}")
     resp.raise_for_status()
@@ -41,7 +42,7 @@ def fetch_entity_info(target_id):
     return ds_info
 
 
-def fetch_uuid_files_info(target_id):
+def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
     resp = requests.get(UUID_API + f"/{target_id}/files",
                         headers={"Authorization": f"Bearer {AUTH_TOK}"})
     resp.raise_for_status()
@@ -49,9 +50,33 @@ def fetch_uuid_files_info(target_id):
     return resp.json()
 
 
-def asset_url(uuid, rel_path):
+def asset_url(uuid: str, rel_path:str) -> str:
     return f"{ASSETS_API}/{uuid}/{rel_path}"
 
+
+def build_funder_entity(crate: ROCrate) -> ContextEntity:
+    funder_props = {
+        "@id": NIH_URI,
+        "@type": "Organization",
+        "name": "US National Institutes of Health",
+        "identifier": NIH_URI
+    }
+    return ContextEntity(crate, identifier=NIH_URI, properties=funder_props)
+    
+
+def build_license_entity(crate: ROCrate) -> ContextEntity:
+    license_props = {
+        "@type": "CreativeWork",
+        "name": "Creative Commons Atribution 4.0 International",
+        "description": ("The Creative Commons Atribution 4.0 International"
+                        " license allows for reuse, remixing, and"
+                        " redistribution as long as attribution is"
+                        " provided to the creator."),
+        "url": "https://spdx.org/licenses/CC-BY-4.0"
+    }
+    return ContextEntity(crate, identifier=license_props["url"],
+                         properties=license_props)
+    
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -91,30 +116,8 @@ def main() -> None:
                                               .astimezone(timezone.utc)
                                               )
 
-    license_props = {
-        "@type": "CreativeWork",
-        "name": "Creative Commons Atribution 4.0 International",
-        "description": ("The Creative Commons Atribution 4.0 International"
-                        " license allows for reuse, remixing, and"
-                        " redistribution as long as attribution is"
-                        " provided to the creator."),
-        "url": "https://spdx.org/licenses/CC-BY-4.0"
-    }
-    license_entity = ContextEntity(crate, identifier=license_props["url"],
-                                   properties=license_props)
-    crate.add(license_entity)
-    crate.root_dataset["license"] = license_entity
-
-    funder_props = {
-        "@id": NIH_URI,
-        "@type": "Organization",
-        "name": "US National Institutes of Health",
-        "identifier": NIH_URI
-    }
-    funder_entity = ContextEntity(crate, identifier=NIH_URI,
-                                  properties=funder_props)
-    crate.add(funder_entity)
-    crate.root_dataset["funder"] = funder_entity
+    crate.root_dataset["license"] = crate.add(build_license_entity(crate))
+    crate.root_dataset["funder"] = crate.add(build_funder_entity(crate))
 
     if "files" in ds_info:
         # This is a derived dataset- include only data products and qa_qc files
