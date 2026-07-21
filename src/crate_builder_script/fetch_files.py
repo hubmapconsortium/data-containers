@@ -16,6 +16,9 @@ UUID_API = "https://uuid.api.hubmapconsortium.org"
 
 DEFAULT_OUTPUT_PATH = "/tmp/crate_test"
 
+# Externally defined identifiers
+NIH_URI = "https://ror.org/01cwqze88"
+
 #TARGET_ID = "HBM567.VCBK.562"
 #TARGET_ID = "HBM487.HJZB.546"
 
@@ -23,10 +26,18 @@ AUTH_TOK = os.environ["AUTH_TOK"]
 
 
 def fetch_entity_info(target_id):
-    resp = requests.get(ENTITY_API + f"/entities/{target_id}?exclude=direct_ancestors")
+    #resp = requests.get(ENTITY_API + f"/entities/{target_id}?exclude=direct_ancestors")
+    resp = requests.get(ENTITY_API + f"/entities/{target_id}")
     resp.raise_for_status()
     ds_info = resp.json()
-    #pprint(ds_info, depth=1)
+    print("TOP LEVEL")
+    pprint(ds_info, depth=1)
+    print("INGEST METADATA")
+    pprint(ds_info.get("ingest_metadata",{}))
+    print("DIRECT ANCESTORS")
+    pprint(ds_info["direct_ancestors"], depth=2)
+    print("CONTRIBUTORS")
+    pprint(ds_info.get("contributors", []), depth=1)
     return ds_info
 
 
@@ -94,6 +105,17 @@ def main() -> None:
     crate.add(license_entity)
     crate.root_dataset["license"] = license_entity
 
+    funder_props = {
+        "@id": NIH_URI,
+        "@type": "Organization",
+        "name": "US National Institutes of Health",
+        "identifier": NIH_URI
+    }
+    funder_entity = ContextEntity(crate, identifier=NIH_URI,
+                                  properties=funder_props)
+    crate.add(funder_entity)
+    crate.root_dataset["funder"] = funder_entity
+
     if "files" in ds_info:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_info["files"]:
@@ -102,7 +124,8 @@ def main() -> None:
                 crate.add_file(asset_url(ds_info['uuid'], fl['rel_path']),
                                validate_url=True)
             else:
-                print(f"{fl['rel_path']} is not a data product")
+                # print(f"{fl['rel_path']} is not a data product")
+                pass
     else:
         for fl_blk in blk_idx.values():
             crate.add_file(asset_url(ds_info['uuid'], fl_blk['path']),
