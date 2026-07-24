@@ -24,37 +24,37 @@ NIH_URI = "https://ror.org/01cwqze88"
 ORCID_URI = "https://orcid.org"
 OBOLIB_URI = "http://purl.obolibrary.org/obo"
 
-#TARGET_ID = "HBM567.VCBK.562"
-#TARGET_ID = "HBM487.HJZB.546"
+# TARGET_ID = "HBM567.VCBK.562"
+# TARGET_ID = "HBM487.HJZB.546"
 
 AUTH_TOK = os.environ["AUTH_TOK"]
 
 
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
-    #resp = requests.get(ENTITY_API + f"/entities/{target_id}?exclude=direct_ancestors")
+    # resp = requests.get(ENTITY_API + f"/entities/{target_id}?exclude=direct_ancestors")
     resp = requests.get(ENTITY_API + f"/entities/{target_id}")
     resp.raise_for_status()
     ds_info = resp.json()
     print("TOP LEVEL")
     pprint(ds_info, depth=1)
     print("INGEST METADATA")
-    pprint(ds_info.get("ingest_metadata",{}))
+    pprint(ds_info.get("ingest_metadata", {}))
     print("DIRECT ANCESTORS")
     pprint(ds_info["direct_ancestors"], depth=2)
-    print("CONTRIBUTORS")
-    pprint(ds_info.get("contributors", []), depth=2)
     return ds_info
 
 
 def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
-    resp = requests.get(UUID_API + f"/{target_id}/files",
-                        headers={"Authorization": f"Bearer {AUTH_TOK}"})
+    resp = requests.get(
+        UUID_API + f"/{target_id}/files",
+        headers={"Authorization": f"Bearer {AUTH_TOK}"},
+    )
     resp.raise_for_status()
-    #pprint(resp.json()[:10])
+    # pprint(resp.json()[:10])
     return resp.json()
 
 
-def asset_url(uuid: str, rel_path:str) -> str:
+def asset_url(uuid: str, rel_path: str) -> str:
     return f"{ASSETS_API}/{uuid}/{rel_path}"
 
 
@@ -63,24 +63,27 @@ def build_funder_entity(crate: ROCrate) -> ContextEntity:
         "@id": NIH_URI,
         "@type": "Organization",
         "name": "US National Institutes of Health",
-        "identifier": NIH_URI
+        "identifier": NIH_URI,
     }
     return ContextEntity(crate, identifier=NIH_URI, properties=funder_props)
-    
+
 
 def build_license_entity(crate: ROCrate) -> ContextEntity:
     license_props = {
         "@type": "CreativeWork",
         "name": "Creative Commons Atribution 4.0 International",
-        "description": ("The Creative Commons Atribution 4.0 International"
-                        " license allows for reuse, remixing, and"
-                        " redistribution as long as attribution is"
-                        " provided to the creator."),
-        "url": "https://spdx.org/licenses/CC-BY-4.0"
+        "description": (
+            "The Creative Commons Atribution 4.0 International"
+            " license allows for reuse, remixing, and"
+            " redistribution as long as attribution is"
+            " provided to the creator."
+        ),
+        "url": "https://spdx.org/licenses/CC-BY-4.0",
     }
-    return ContextEntity(crate, identifier=license_props["url"],
-                         properties=license_props)
-    
+    return ContextEntity(
+        crate, identifier=license_props["url"], properties=license_props
+    )
+
 
 def build_pi_entity(crate: ROCrate) -> ContextEntity:
     props = {
@@ -88,39 +91,43 @@ def build_pi_entity(crate: ROCrate) -> ContextEntity:
         "@type": "Role",
         "roleName": "Principal Investigator",
         "description": "Responsible for overall scientific direction and oversight.",
-        "url": f"{OBOLIB_URI}/OBI_0000103"
+        "url": f"{OBOLIB_URI}/OBI_0000103",
     }
     return ContextEntity(crate, identifier=props["@id"], properties=props)
-    
+
 
 def build_contact_entity(crate: ROCrate) -> ContextEntity:
     props = {
         "@id": "#role-contact",
         "@type": "Role",
         "roleName": "ContactRepresentative",
-        "description": ("A role inhering in a person who represents an institution,"
-                        " organization, or service provider and realized when"
-                        " communication is directed at them about the entity they"
-                        " represent."),
-        "url": f"{OBOLIB_URI}/OBI_0001687"
+        "description": (
+            "A role inhering in a person who represents an institution,"
+            " organization, or service provider and realized when"
+            " communication is directed at them about the entity they"
+            " represent."
+        ),
+        "url": f"{OBOLIB_URI}/OBI_0001687",
     }
     return ContextEntity(crate, identifier=props["@id"], properties=props)
-    
+
 
 def build_ia_entity(crate: ROCrate) -> ContextEntity:
     props = {
         "@id": "#role-investigative-agent",
         "@type": "Role",
         "roleName": "InvestigativeAgent",
-        "description": ("A role borne by an entity and that is realized"
-                        " in a process that is part of an investigation"
-                        " in which an objective is achieved. These processes"
-                        " include, among others: planning, overseeing,"
-                        " funding, reviewing."),
-        "url": f"{OBOLIB_URI}/OBI_0000202"
+        "description": (
+            "A role borne by an entity and that is realized"
+            " in a process that is part of an investigation"
+            " in which an objective is achieved. These processes"
+            " include, among others: planning, overseeing,"
+            " funding, reviewing."
+        ),
+        "url": f"{OBOLIB_URI}/OBI_0000202",
     }
     return ContextEntity(crate, identifier=props["@id"], properties=props)
-    
+
 
 def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[ContextEntity]:
     ent_l = []
@@ -130,7 +137,7 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
         props = {
             "@type": "Person",
             "@id": f"{ORCID_URI}/{contrib['orcid']}",
-            "name": contrib["display_name"]
+            "name": contrib["display_name"],
         }
         person = Person(crate, identifier=props["@id"], properties=props)
         add_to_entities = True
@@ -154,12 +161,18 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("target_id",
-                        help="Build an RO-Crate for this published dataset")
-    parser.add_argument("--outdir", "-o",
-                        help=("Path for the output crate directory. The default is"
-                              f" {DEFAULT_OUTPUT_PATH}"),
-                        default=DEFAULT_OUTPUT_PATH)
+    parser.add_argument(
+        "target_id", help="Build an RO-Crate for this published dataset"
+    )
+    parser.add_argument(
+        "--outdir",
+        "-o",
+        help=(
+            "Path for the output crate directory. The default is"
+            f" {DEFAULT_OUTPUT_PATH}"
+        ),
+        default=DEFAULT_OUTPUT_PATH,
+    )
     args = parser.parse_args()
     pprint(args)
     target_id = args.target_id
@@ -171,7 +184,6 @@ def main() -> None:
     blk_idx = {}
     for file_blk in uuid_files:
         blk_idx[file_blk["path"]] = file_blk
-
 
     # The dataset DOIs point to the Portal, which is basically a landing page, which is
     # forbidden as the direct link for a dataset under FAIR.  So we can't use the DOI
@@ -185,10 +197,11 @@ def main() -> None:
 
     crate.root_dataset["name"] = target_id
     crate.root_dataset["description"] = ds_info["title"]
-    crate.root_dataset["datePublished"] = str(datetime
-                                              .fromtimestamp(ds_info["published_timestamp"]//1000)
-                                              .astimezone(timezone.utc)
-                                              )
+    crate.root_dataset["datePublished"] = str(
+        datetime.fromtimestamp(ds_info["published_timestamp"] // 1000).astimezone(
+            timezone.utc
+        )
+    )
 
     crate.root_dataset["license"] = crate.add(build_license_entity(crate))
     crate.root_dataset["funder"] = crate.add(build_funder_entity(crate))
@@ -203,16 +216,19 @@ def main() -> None:
         for fl in ds_info["files"]:
             if fl["is_data_product"] or fl["is_qa_qc"]:
                 print(f"Adding {fl['rel_path']}")
-                crate.add_file(asset_url(ds_info['uuid'], fl['rel_path']),
-                               validate_url=True)
+                crate.add_file(
+                    asset_url(ds_info["uuid"], fl["rel_path"]), validate_url=True
+                )
             else:
                 # print(f"{fl['rel_path']} is not a data product")
                 pass
     else:
         for fl_blk in blk_idx.values():
-            crate.add_file(asset_url(ds_info['uuid'], fl_blk['path']),
-                           validate_url=True)
+            crate.add_file(
+                asset_url(ds_info["uuid"], fl_blk["path"]), validate_url=True
+            )
     crate.write(outdir)
+
 
 if __name__ == "__main__":
     main()
