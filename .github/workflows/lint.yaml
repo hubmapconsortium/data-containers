@@ -20,12 +20,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
           cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
+            src/requirements.txt
+            src/requirements-dev.txt
 
       - name: Install Dependencies
         run: |
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r src/requirements.txt -r src/requirements-dev.txt
 
       # Should respect .flake8 config
       - name: Flake8 Lint
