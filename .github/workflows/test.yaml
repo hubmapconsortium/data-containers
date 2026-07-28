@@ -1,19 +1,36 @@
+# Available versions:
+# https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
+
 name: Test
 
 on: [push, pull_request]
 
 jobs:
   build:
-
-    # Available versions:
-    # https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-    - uses: actions/checkout@v2
-      # with:
-      #   submodules: 'recursive'
+      - uses: actions/checkout@v5
 
-    # TODO: setup environment
-    # TODO: install dependencies
-    # TODO: run tests
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: "x64"
+
+      - name: Install parallel
+        run: sudo apt-get install parallel
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r src/requirements.txt
+          pip install -r src/requirements-dev.txt
+
+      - name: Run test script
+        run: ./test.sh -n # leave linting/formatting check to linting.yml
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
