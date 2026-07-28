@@ -1,17 +1,18 @@
 import argparse
-import requests
-from pprint import pprint, pformat
-from pathlib import Path
 import json
 import os
+from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+from pprint import pformat, pprint
+from typing import Any, List
+
+import bagit
+import requests
 import rocrate
-from rocrate.rocrate import ROCrate
 from rocrate.model.contextentity import ContextEntity
 from rocrate.model.person import Person
-import bagit
-from datetime import datetime, timezone
-from typing import Any, List
-from collections import defaultdict
+from rocrate.rocrate import ROCrate
 
 ENTITY_API = "https://entity.api.hubmapconsortium.org"
 ASSETS_API = "https://assets.hubmapconsortium.org"

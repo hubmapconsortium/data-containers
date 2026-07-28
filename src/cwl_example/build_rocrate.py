@@ -2,9 +2,10 @@
 
 from pathlib import Path
 from subprocess import run
+
 import bagit
-from rocrate.rocrate import ROCrate
 from rocrate.model.dataset import Dataset
+from rocrate.rocrate import ROCrate
 
 
 def main():
