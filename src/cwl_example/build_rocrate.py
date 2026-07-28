@@ -4,7 +4,6 @@ from pathlib import Path
 from subprocess import run
 
 import bagit
-from rocrate.model.dataset import Dataset
 from rocrate.rocrate import ROCrate
 
 
@@ -23,7 +22,7 @@ def main():
         bag_path = Path(bag)
         try:
             bag = bagit.Bag(bag_path)
-            bag_dataset = crate.add_dataset(
+            crate.add_dataset(
                 source=bag_path,
                 dest_path=bag_path.name,
                 properties={

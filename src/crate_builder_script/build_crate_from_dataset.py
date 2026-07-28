@@ -1,15 +1,11 @@
 import argparse
-import json
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-from pathlib import Path
 from pprint import pformat, pprint
 from typing import Any, List
 
-import bagit
 import requests
-import rocrate
 from rocrate.model.contextentity import ContextEntity
 from rocrate.model.person import Person
 from rocrate.rocrate import ROCrate
