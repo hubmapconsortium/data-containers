@@ -1,8 +1,8 @@
 import argparse
+import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-import logging
 from pprint import pformat
 from typing import Any, List
 
@@ -39,9 +39,7 @@ def fetch_entity_info(target_id: str) -> dict[str, Any]:
     resp.raise_for_status()
     ds_info = resp.json()
     LOGGER.debug("TOP LEVEL:\n%s", pformat(ds_info, depth=1))
-    LOGGER.debug("INGEST METADATA:\n%s",
-                 pformat(ds_info.get("ingest_metadata", {}))
-                 )
+    LOGGER.debug("INGEST METADATA:\n%s", pformat(ds_info.get("ingest_metadata", {})))
     LOGGER.debug("DIRECT ANCESTORS:\n%s", pformat(ds_info["direct_ancestors"], depth=2))
     return ds_info
 
@@ -175,9 +173,15 @@ def main() -> None:
         ),
         default=DEFAULT_OUTPUT_PATH,
     )
+    parser.add_argument(
+        "--all_files",
+        action="store_true",
+        help="Include all files, not just data products and qa_qc files",
+    )
     args = parser.parse_args()
     target_id = args.target_id
     outdir = args.outdir
+    include_all_files = args.all_files
 
     ds_info = fetch_entity_info(target_id)
 
@@ -215,7 +219,7 @@ def main() -> None:
     if "files" in ds_info:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_info["files"]:
-            if fl["is_data_product"] or fl["is_qa_qc"]:
+            if fl["is_data_product"] or fl["is_qa_qc"] or include_all_files:
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
                     asset_url(ds_info["uuid"], fl["rel_path"]), validate_url=True
