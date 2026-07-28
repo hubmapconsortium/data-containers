@@ -22,8 +22,7 @@ jobs:
       - name: Install dependencies
         uses: py-actions/py-dependency-install@v4
         with:
-          path: "src/requirements.txt"
-          path: "src/requirements-dev.txt"
+          path: ["src/requirements.txt", "src/requirements-dev.txt"]
 
       # Should respect .flake8 config
       - name: Flake8 Lint
