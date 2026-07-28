@@ -5,6 +5,5 @@ requests==2.32.3
 rocrate>=0.15.0
 bagit
 mlcroissant
-cwltool
+git+https://github.com/hubmapconsortium/cwltool.git@docker-gpu#egg=cwltool
 setuptools<82
-roc_validator
