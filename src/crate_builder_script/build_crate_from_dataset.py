@@ -2,13 +2,20 @@ import argparse
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-from pprint import pformat, pprint
+import logging
+from pprint import pformat
 from typing import Any, List
 
 import requests
 from rocrate.model.contextentity import ContextEntity
 from rocrate.model.person import Person
 from rocrate.rocrate import ROCrate
+
+logging.basicConfig(
+    level=logging.INFO,
+)
+
+LOGGER = logging.getLogger(__name__)
 
 ENTITY_API = "https://entity.api.hubmapconsortium.org"
 ASSETS_API = "https://assets.hubmapconsortium.org"
@@ -28,16 +35,14 @@ AUTH_TOK = os.environ["AUTH_TOK"]
 
 
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
-    # resp = requests.get(ENTITY_API + f"/entities/{target_id}?exclude=direct_ancestors")
     resp = requests.get(ENTITY_API + f"/entities/{target_id}")
     resp.raise_for_status()
     ds_info = resp.json()
-    print("TOP LEVEL")
-    pprint(ds_info, depth=1)
-    print("INGEST METADATA")
-    pprint(ds_info.get("ingest_metadata", {}))
-    print("DIRECT ANCESTORS")
-    pprint(ds_info["direct_ancestors"], depth=2)
+    LOGGER.debug("TOP LEVEL:\n%s", pformat(ds_info, depth=1))
+    LOGGER.debug("INGEST METADATA:\n%s",
+                 pformat(ds_info.get("ingest_metadata", {}))
+                 )
+    LOGGER.debug("DIRECT ANCESTORS:\n%s", pformat(ds_info["direct_ancestors"], depth=2))
     return ds_info
 
 
@@ -47,7 +52,7 @@ def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
         headers={"Authorization": f"Bearer {AUTH_TOK}"},
     )
     resp.raise_for_status()
-    # pprint(resp.json()[:10])
+    LOGGER.debug("UUID FILES first 10:\n%s", pformat(resp.json()[:10]))
     return resp.json()
 
 
@@ -171,7 +176,6 @@ def main() -> None:
         default=DEFAULT_OUTPUT_PATH,
     )
     args = parser.parse_args()
-    pprint(args)
     target_id = args.target_id
     outdir = args.outdir
 
@@ -212,13 +216,12 @@ def main() -> None:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_info["files"]:
             if fl["is_data_product"] or fl["is_qa_qc"]:
-                print(f"Adding {fl['rel_path']}")
+                LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
                     asset_url(ds_info["uuid"], fl["rel_path"]), validate_url=True
                 )
             else:
-                # print(f"{fl['rel_path']} is not a data product")
-                pass
+                LOGGER.debug(f"{fl['rel_path']} is not a data product")
     else:
         for fl_blk in blk_idx.values():
             crate.add_file(
