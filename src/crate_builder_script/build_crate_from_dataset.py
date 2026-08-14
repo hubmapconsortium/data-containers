@@ -1,11 +1,13 @@
 import argparse
+import json
+import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-import logging
 from pprint import pformat
 from typing import Any, List
 
+import mlcroissant as mlc
 import requests
 from rocrate.model.contextentity import ContextEntity
 from rocrate.model.person import Person
@@ -22,6 +24,7 @@ ASSETS_API = "https://assets.hubmapconsortium.org"
 UUID_API = "https://uuid.api.hubmapconsortium.org"
 
 DEFAULT_OUTPUT_PATH = "/tmp/crate_test"
+CROISSANT_FILENAME = "croissant.json"
 
 # Externally defined identifiers
 NIH_URI = "https://ror.org/01cwqze88"
@@ -33,15 +36,40 @@ OBOLIB_URI = "http://purl.obolibrary.org/obo"
 
 AUTH_TOK = os.environ["AUTH_TOK"]
 
+class CroissantWrapper():
+    def __init__(self, name: str, description: str):
+        self.name = name
+        self.description = description
+        self.file_objects = []
+        self.record_sets = []
+
+    def add_file(self, file_obj: mlc.FileObject):
+        self.file_objects.append(file_obj)
+
+    def add_record_set(self, record_set: mlc.RecordSet):
+        self.record_sets.append(record_set)
+
+    def write(self, croissant_filename: str):
+        croissant_meta = mlc.Metadata(
+            id="croissant-spec",
+            name=self.name,
+            description=self.description,
+            distribution=self.file_objects,
+            record_sets=self.record_sets
+        )
+        with open(croissant_filename, "w", encoding="utf-8") as f:
+            json.dump(croissant_meta.to_json(), f, indent=2)
+
 
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
-    resp = requests.get(ENTITY_API + f"/entities/{target_id}")
+    resp = requests.get(
+        ENTITY_API + f"/entities/{target_id}",
+        headers={"Authorization": f"Bearer {AUTH_TOK}"}
+    )
     resp.raise_for_status()
     ds_info = resp.json()
     LOGGER.debug("TOP LEVEL:\n%s", pformat(ds_info, depth=1))
-    LOGGER.debug("INGEST METADATA:\n%s",
-                 pformat(ds_info.get("ingest_metadata", {}))
-                 )
+    LOGGER.debug("INGEST METADATA:\n%s", pformat(ds_info.get("ingest_metadata", {})))
     LOGGER.debug("DIRECT ANCESTORS:\n%s", pformat(ds_info["direct_ancestors"], depth=2))
     return ds_info
 
@@ -164,7 +192,7 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "target_id", help="Build an RO-Crate for this published dataset"
+        "target_id", help="Build an RO-Crate for this dataset"
     )
     parser.add_argument(
         "--outdir",
@@ -175,10 +203,21 @@ def main() -> None:
         ),
         default=DEFAULT_OUTPUT_PATH,
     )
+    parser.add_argument(
+        "--debug",
+        "-d",
+        action="store_true",
+        help="Enable debug logging",
+    )
     args = parser.parse_args()
     target_id = args.target_id
     outdir = args.outdir
+    debug = args.debug
 
+    if debug:
+        LOGGER.setLevel(logging.DEBUG)
+        logging.getLogger("requests").setLevel(logging.DEBUG)
+        logging.getLogger("urllib3").setLevel(logging.DEBUG)
     ds_info = fetch_entity_info(target_id)
 
     uuid_files = fetch_uuid_files_info(target_id)
@@ -190,19 +229,21 @@ def main() -> None:
     # forbidden as the direct link for a dataset under FAIR.  So we can't use the DOI
     # as the crate root dataset id.
     crate = ROCrate()
+    crate.root_dataset["name"] = target_id
+    crate.root_dataset["description"] = ds_info["title"]
+    wrapped_croissant = CroissantWrapper(target_id, ds_info["title"])
 
     if "doi_url" in ds_info:
         doi_url = ds_info["doi_url"]
         crate.root_dataset["identifier"] = doi_url
         crate.root_dataset["sameAs"] = doi_url
 
-    crate.root_dataset["name"] = target_id
-    crate.root_dataset["description"] = ds_info["title"]
-    crate.root_dataset["datePublished"] = str(
-        datetime.fromtimestamp(ds_info["published_timestamp"] // 1000).astimezone(
-            timezone.utc
+    if "published_timestamp" in ds_info:
+        crate.root_dataset["datePublished"] = str(
+            datetime.fromtimestamp(ds_info["published_timestamp"] // 1000).astimezone(
+                timezone.utc
+            )
         )
-    )
 
     crate.root_dataset["license"] = crate.add(build_license_entity(crate))
     crate.root_dataset["funder"] = crate.add(build_funder_entity(crate))
@@ -211,6 +252,22 @@ def main() -> None:
         ent_l = build_contributors(crate, contributors)
         [crate.add(ent) for ent in ent_l]
         crate.root_dataset["contributor"] = ent_l
+
+    if not os.path.isdir(outdir):
+        os.makedirs(outdir, exist_ok=True)
+    wrapped_croissant.write(os.path.join(outdir, CROISSANT_FILENAME))
+    croissant_crate_file = crate.add_file(
+        os.path.join(outdir, CROISSANT_FILENAME),
+        properties={
+            "name": "Croissant Metadata Descriptor",
+            "description": "Machine learning data-loading configurations for this dataset.",
+            "encodingFormat": "application/ld+json",
+            "conformsTo": "http://mlcommons.org"
+        }
+    )
+
+    # I don't know why this isn't needed
+    #crate.root_dataset.append_to("hasPart", croissant_crate_file)
 
     if "files" in ds_info:
         # This is a derived dataset- include only data products and qa_qc files
@@ -227,7 +284,7 @@ def main() -> None:
             crate.add_file(
                 asset_url(ds_info["uuid"], fl_blk["path"]), validate_url=True
             )
-    crate.write(outdir)
+    crate.write_zip(os.path.join(outdir, f"{target_id}_crate.zip"))
 
 
 if __name__ == "__main__":
