@@ -7,11 +7,12 @@ from datetime import datetime, timezone
 from pprint import pformat
 from typing import Any, List
 
-import mlcroissant as mlc
 import requests
 from rocrate.model.contextentity import ContextEntity
 from rocrate.model.person import Person
 from rocrate.rocrate import ROCrate
+
+from croissant_wrapper import CroissantWrapper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,30 +36,6 @@ OBOLIB_URI = "http://purl.obolibrary.org/obo"
 # TARGET_ID = "HBM487.HJZB.546"
 
 AUTH_TOK = os.environ["AUTH_TOK"]
-
-class CroissantWrapper():
-    def __init__(self, name: str, description: str):
-        self.name = name
-        self.description = description
-        self.file_objects = []
-        self.record_sets = []
-
-    def add_file(self, file_obj: mlc.FileObject):
-        self.file_objects.append(file_obj)
-
-    def add_record_set(self, record_set: mlc.RecordSet):
-        self.record_sets.append(record_set)
-
-    def write(self, croissant_filename: str):
-        croissant_meta = mlc.Metadata(
-            id="croissant-spec",
-            name=self.name,
-            description=self.description,
-            distribution=self.file_objects,
-            record_sets=self.record_sets
-        )
-        with open(croissant_filename, "w", encoding="utf-8") as f:
-            json.dump(croissant_meta.to_json(), f, indent=2)
 
 
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
