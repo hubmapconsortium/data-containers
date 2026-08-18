@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pprint import pformat
 from typing import Any, List
+from tempfile import TemporaryDirectory
 
 import requests
 from rocrate.model.contextentity import ContextEntity
@@ -230,11 +231,13 @@ def main() -> None:
         [crate.add(ent) for ent in ent_l]
         crate.root_dataset["contributor"] = ent_l
 
+    tmpdir = TemporaryDirectory()
+
     if not os.path.isdir(outdir):
         os.makedirs(outdir, exist_ok=True)
-    wrapped_croissant.write(os.path.join(outdir, CROISSANT_FILENAME))
+    wrapped_croissant.write(os.path.join(tmpdir.name, CROISSANT_FILENAME))
     croissant_crate_file = crate.add_file(
-        os.path.join(outdir, CROISSANT_FILENAME),
+        os.path.join(tmpdir.name, CROISSANT_FILENAME),
         properties={
             "name": "Croissant Metadata Descriptor",
             "description": "Machine learning data-loading configurations for this dataset.",
@@ -262,7 +265,7 @@ def main() -> None:
                 asset_url(ds_info["uuid"], fl_blk["path"]), validate_url=True
             )
     crate.write_zip(os.path.join(outdir, f"{target_id}_crate.zip"))
-
+    tmpdir.cleanup()
 
 if __name__ == "__main__":
     main()
