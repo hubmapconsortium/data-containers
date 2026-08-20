@@ -4,7 +4,7 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-from pprint import pformat
+from pprint import pformat, pprint
 from typing import Any, List
 from tempfile import TemporaryDirectory
 
@@ -34,7 +34,7 @@ ORCID_URI = "https://orcid.org"
 OBOLIB_URI = "http://purl.obolibrary.org/obo"
 
 # TARGET_ID = "HBM567.VCBK.562"
-# TARGET_ID = "HBM487.HJZB.546"
+# TARGET_ID = "HBM487.HJZB.546"  # primary dataset
 
 AUTH_TOK = os.environ["AUTH_TOK"]
 
@@ -48,7 +48,17 @@ def fetch_entity_info(target_id: str) -> dict[str, Any]:
     ds_info = resp.json()
     LOGGER.debug("TOP LEVEL:\n%s", pformat(ds_info, depth=1))
     LOGGER.debug("INGEST METADATA:\n%s", pformat(ds_info.get("ingest_metadata", {})))
-    LOGGER.debug("DIRECT ANCESTORS:\n%s", pformat(ds_info["direct_ancestors"], depth=2))
+    LOGGER.debug("METADATA:\n%s", pformat(ds_info.get("metadata", {})))
+    LOGGER.debug("DIRECT ANCESTORS:\n%s", pformat(ds_info.get("direct_ancestors"), depth=2)) 
+    LOGGER.debug("DIRECT ANCESTOR:\n%s", pformat(ds_info.get("direct_ancestor"), depth=2)) 
+    if "direct_ancestors" in ds_info:
+        first_ancestor = ds_info["direct_ancestors"][0]
+    elif "direct_ancestor" in ds_info:
+        first_ancestor = ds_info["direct_ancestor"]
+    else:
+        first_ancestor = {}
+    LOGGER.debug("ANCESTOR INGEST MD\n%s", pformat(first_ancestor.get("ingest_metadata", {})))
+    LOGGER.debug("ANCESTOR MD\n%s", pformat(first_ancestor.get("metadata", {})))
     return ds_info
 
 
@@ -58,7 +68,7 @@ def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
         headers={"Authorization": f"Bearer {AUTH_TOK}"},
     )
     resp.raise_for_status()
-    LOGGER.debug("UUID FILES first 10:\n%s", pformat(resp.json()[:10]))
+    # LOGGER.debug("UUID FILES first 10:\n%s", pformat(resp.json()[:10]))
     return resp.json()
 
 
@@ -197,6 +207,10 @@ def main() -> None:
         logging.getLogger("requests").setLevel(logging.DEBUG)
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
     ds_info = fetch_entity_info(target_id)
+    print("TEST")
+    from pprint import pprint
+    pprint(fetch_entity_info("HBM976.XLDJ.575"), depth=2)
+    print("END TEST")
 
     uuid_files = fetch_uuid_files_info(target_id)
     blk_idx = {}
@@ -209,6 +223,7 @@ def main() -> None:
     crate = ROCrate()
     crate.root_dataset["name"] = target_id
     crate.root_dataset["description"] = ds_info["title"]
+    CroissantWrapper.test(ds_info)
     wrapped_croissant = CroissantWrapper(target_id, ds_info["title"])
 
     if "doi_url" in ds_info:

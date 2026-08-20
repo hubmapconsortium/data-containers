@@ -4,6 +4,6 @@ PyYAML==6.0.2
 requests==2.32.3
 rocrate>=0.15.0
 bagit
-mlcroissant
+mlcroissant[dev]>=1.1.0
 git+https://github.com/hubmapconsortium/cwltool.git@docker-gpu#egg=cwltool
 setuptools<82
