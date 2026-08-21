@@ -8,11 +8,11 @@ from pprint import pformat, pprint
 from typing import Any, List
 from tempfile import TemporaryDirectory
 
-import requests
 from rocrate.model.contextentity import ContextEntity
 from rocrate.model.person import Person
 from rocrate.rocrate import ROCrate
 
+import api_calls
 from croissant_wrapper import CroissantWrapper
 
 logging.basicConfig(
@@ -20,10 +20,6 @@ logging.basicConfig(
 )
 
 LOGGER = logging.getLogger(__name__)
-
-ENTITY_API = "https://entity.api.hubmapconsortium.org"
-ASSETS_API = "https://assets.hubmapconsortium.org"
-UUID_API = "https://uuid.api.hubmapconsortium.org"
 
 DEFAULT_OUTPUT_PATH = "/tmp/crate_test"
 CROISSANT_FILENAME = "croissant.json"
@@ -35,45 +31,6 @@ OBOLIB_URI = "http://purl.obolibrary.org/obo"
 
 # TARGET_ID = "HBM567.VCBK.562"
 # TARGET_ID = "HBM487.HJZB.546"  # primary dataset
-
-AUTH_TOK = os.environ["AUTH_TOK"]
-
-
-def fetch_entity_info(target_id: str) -> dict[str, Any]:
-    resp = requests.get(
-        ENTITY_API + f"/entities/{target_id}",
-        headers={"Authorization": f"Bearer {AUTH_TOK}"}
-    )
-    resp.raise_for_status()
-    ds_info = resp.json()
-    LOGGER.debug("TOP LEVEL:\n%s", pformat(ds_info, depth=1))
-    LOGGER.debug("INGEST METADATA:\n%s", pformat(ds_info.get("ingest_metadata", {})))
-    LOGGER.debug("METADATA:\n%s", pformat(ds_info.get("metadata", {})))
-    LOGGER.debug("DIRECT ANCESTORS:\n%s", pformat(ds_info.get("direct_ancestors"), depth=2)) 
-    LOGGER.debug("DIRECT ANCESTOR:\n%s", pformat(ds_info.get("direct_ancestor"), depth=2)) 
-    if "direct_ancestors" in ds_info:
-        first_ancestor = ds_info["direct_ancestors"][0]
-    elif "direct_ancestor" in ds_info:
-        first_ancestor = ds_info["direct_ancestor"]
-    else:
-        first_ancestor = {}
-    LOGGER.debug("ANCESTOR INGEST MD\n%s", pformat(first_ancestor.get("ingest_metadata", {})))
-    LOGGER.debug("ANCESTOR MD\n%s", pformat(first_ancestor.get("metadata", {})))
-    return ds_info
-
-
-def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
-    resp = requests.get(
-        UUID_API + f"/{target_id}/files",
-        headers={"Authorization": f"Bearer {AUTH_TOK}"},
-    )
-    resp.raise_for_status()
-    # LOGGER.debug("UUID FILES first 10:\n%s", pformat(resp.json()[:10]))
-    return resp.json()
-
-
-def asset_url(uuid: str, rel_path: str) -> str:
-    return f"{ASSETS_API}/{uuid}/{rel_path}"
 
 
 def build_funder_entity(crate: ROCrate) -> ContextEntity:
@@ -206,13 +163,11 @@ def main() -> None:
         LOGGER.setLevel(logging.DEBUG)
         logging.getLogger("requests").setLevel(logging.DEBUG)
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
-    ds_info = fetch_entity_info(target_id)
-    print("TEST")
-    from pprint import pprint
-    pprint(fetch_entity_info("HBM976.XLDJ.575"), depth=2)
-    print("END TEST")
+        logging.getLogger("api_calls").setLevel(logging.DEBUG)
+        logging.getLogger("croissant_wrapper").setLevel(logging.DEBUG)
+    ds_info = api_calls.fetch_entity_info(target_id)
 
-    uuid_files = fetch_uuid_files_info(target_id)
+    uuid_files = api_calls.fetch_uuid_files_info(target_id)
     blk_idx = {}
     for file_blk in uuid_files:
         blk_idx[file_blk["path"]] = file_blk
@@ -270,14 +225,16 @@ def main() -> None:
             if fl["is_data_product"] or fl["is_qa_qc"]:
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
-                    asset_url(ds_info["uuid"], fl["rel_path"]), validate_url=True
+                    api_calls.asset_url(ds_info["uuid"], fl["rel_path"]),
+                    validate_url=True
                 )
             else:
                 LOGGER.debug(f"{fl['rel_path']} is not a data product")
     else:
         for fl_blk in blk_idx.values():
             crate.add_file(
-                asset_url(ds_info["uuid"], fl_blk["path"]), validate_url=True
+                api_calls.asset_url(ds_info["uuid"], fl_blk["path"]),
+                validate_url=True
             )
     crate.write_zip(os.path.join(outdir, f"{target_id}_crate.zip"))
     tmpdir.cleanup()

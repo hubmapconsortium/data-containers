@@ -1,8 +1,12 @@
 import json
 import logging
-from pprint import pformat
+from os import walk
+from pprint import pformat, pprint
+from venv import logger
 
 import mlcroissant as mlc
+
+from api_calls import fetch_entity_info
 
 LOGGER = logging.getLogger(__name__)
 
@@ -77,7 +81,45 @@ def _acquisition_activity(entity: dict, md: dict) -> dict:
     return {k: v for k, v in act.items() if v not in (None, "", [])}
 
 
-def _specimen_chain(context: dict) -> dict:
+def walk_ancestors(entity: dict) -> list[dict]:
+    """Return a list of ancestor entities, starting with the immediate parent."""
+    rslt = []
+    e_type = entity.get("entity_type")
+    e_id = entity.get("hubmap_id")
+    LOGGER.debug(f"walk_ancestors {e_id} {e_type}")
+    if e_type == "Dataset":
+        ancs = [walk_ancestors(anc) for anc in entity.get("direct_ancestors", [])]
+        if ancs:
+            rslt.append((e_type, e_id, ancs))
+        else:
+            md = entity.get("metadata", {})
+            if "parent_sample_id" in md:
+                samp_id = md["parent_sample_id"]
+                samp_entity = fetch_entity_info(samp_id)
+                rslt.append((e_type, e_id, walk_ancestors(samp_entity)))
+    elif e_type in ("Sample", "Donor"):
+        e_cat = entity.get("sample_category", "UNKNOWN SAMPLE CATEGORY")
+        LOGGER.debug(f"walk_ancestors sample category is {e_cat}")
+        if "direct_ancestor" not in entity:
+            LOGGER.debug(f"walk_ancestors fetching dead-end sample {e_id}")
+            entity = fetch_entity_info(e_id)
+            LOGGER.debug("walk_ancestors fetch yielded:\n%s",
+                         pformat(entity, depth=2))
+            LOGGER.debug("walk_ancestors end of walk jump result")
+        new_entity = entity.get("direct_ancestor", {})
+        if e_type == "Donor":
+            rslt.append((f"{e_type}", e_id, None))
+        else:
+            rslt.append((f"{e_type} {e_cat}", e_id, walk_ancestors(new_entity)))
+    else:
+        LOGGER.warning(f"walk_ancestors UNKNOWN ETYPE {e_type} for {e_id}")
+    return rslt
+
+
+def _specimen_chain(entity: dict, recur=0) -> dict:
+    if recur > 10:
+        LOGGER.warning("Recursion limit reached in _specimen_chain for entity %s", entity.get("hubmap_id"))
+        return {}
     def node(anc):
         n = {"@type": "prov:Entity", "@id": HUBMAP + (anc.get("hubmap_id") or ""),
              "schema:name": anc.get("hubmap_id"), "hubmap:entityType": anc.get("entity_type"),
@@ -90,6 +132,12 @@ def _specimen_chain(context: dict) -> dict:
                                       "z": r.get("z_dimension"), "unit": r.get("dimension_units")}
         return {k: v for k, v in n.items() if v not in (None, "", [])}
     order = {"section": 0, "block": 1, "organ": 2}
+    anc_entities = walk_ancestors(entity)
+    LOGGER.info("Ancestor entities for %s: %s", entity.get("hubmap_id"), anc_entities)
+    return None
+    """ while "direct_ancestors" in entity and entity["direct_ancestors"]:
+        parent_entity = entity["direct_ancestors"][0]
+        ancs.append(entity)
     ancs = [a for a in context.get("ancestors", []) if a.get("entity_type") in ("Sample", "Donor")]
     ancs.sort(key=lambda a: order.get(a.get("sample_category"), 4))
     derived = None
@@ -99,7 +147,7 @@ def _specimen_chain(context: dict) -> dict:
             n["prov:wasDerivedFrom"] = derived
         derived = n
     return derived
-
+ """
 def _pipeline_activity(dag_list: list) -> dict:
     return {}
 """
@@ -121,19 +169,21 @@ def build_embedded_provenance(entity, context, md, descendants=None, raw_entity=
     (which carries the acquisition activity + specimen chain). RAW subject: wasGeneratedBy
     acquisition; wasDerivedFrom specimen chain; + a light forward pointer to processed versions.
     """
+    test_chain = walk_ancestors(entity)
+    LOGGER.info("walk_ancestors for %s: %s", entity.get("hubmap_id"), test_chain)
     if is_processed(entity) and raw_entity is not None:
         raw_node = {
             "@type": "prov:Entity", "@id": HUBMAP + (raw_entity.get("hubmap_id") or ""),
             "schema:name": raw_entity.get("hubmap_id"),
             "hubmap:datasetType": raw_entity.get("dataset_type"),
             "prov:wasGeneratedBy": _acquisition_activity(raw_entity, raw_md or {}),
-            "prov:wasDerivedFrom": _specimen_chain(context)
+            "prov:wasDerivedFrom": _specimen_chain(raw_entity)
         }
         #raw_node = {k: v for k, v in raw_node.items() if v}
         return {"prov:wasGeneratedBy": _pipeline_activity(_own_dag(entity)),
                 "prov:wasDerivedFrom": raw_node}
     provo = {"prov:wasGeneratedBy": _acquisition_activity(entity, md)}
-    if chain := _specimen_chain(context):
+    if chain := _specimen_chain(entity):
         provo["prov:wasDerivedFrom"] = chain
     if descendants:
         provo["hubmap:hasProcessedDataset"] = [
