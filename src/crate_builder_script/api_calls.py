@@ -57,7 +57,15 @@ def walk_ancestors(
         entity: dict,
         continue_test: Callable[[dict], bool] = lambda ent: True
     ) -> list[tuple]:
-    """Return a list of ancestor entities, starting with the immediate parent."""
+    """
+    Given an entity dictionary, return a list of tuples.  Each tuple has
+    the form:
+    (hubmap_id entity_dict list-of-ancestors)
+    where list-of-ancestors is None or a list of tuples of the same form.
+
+    continue_test takes an entity dict as a parameter and returns True if
+    the descent should continue to the children of that entity, False otherwise.
+    """
     rslt = []
     if not continue_test(entity):
         return rslt
