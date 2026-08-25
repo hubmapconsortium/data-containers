@@ -1,7 +1,8 @@
 import logging
 import os
-from pprint import pformat, pprint
+from pprint import pformat
 from typing import Any
+from collections.abc import Callable
 
 import requests
 
@@ -50,3 +51,49 @@ def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
 
 def asset_url(uuid: str, rel_path: str) -> str:
     return f"{ASSETS_API}/{uuid}/{rel_path}"
+
+
+def walk_ancestors(
+        entity: dict,
+        continue_test: Callable[[dict], bool] = lambda ent: True
+    ) -> list[tuple]:
+    """Return a list of ancestor entities, starting with the immediate parent."""
+    rslt = []
+    if not continue_test(entity):
+        return rslt
+    e_type = entity.get("entity_type")
+    e_id = entity.get("hubmap_id")
+    LOGGER.debug(f"walk_ancestors {e_id} {e_type}")
+    if e_type == "Dataset":
+        ancs = [walk_ancestors(anc, continue_test)
+                for anc in entity.get("direct_ancestors", [])]
+        if ancs:
+            all_tuples = []
+            for sub_list in ancs:
+                assert isinstance(sub_list, list)
+                all_tuples.extend(sub_list)
+            rslt.append((e_id, entity, all_tuples))
+        else:
+            md = entity.get("metadata", {})
+            if "parent_sample_id" in md:
+                # The parent is a sample
+                samp_id = md["parent_sample_id"]
+                samp_entity = fetch_entity_info(samp_id)
+                rslt.append((e_id, entity, walk_ancestors(samp_entity, continue_test)))
+    elif e_type in ("Sample", "Donor"):
+        e_cat = entity.get("sample_category", "UNKNOWN SAMPLE CATEGORY")
+        LOGGER.debug(f"walk_ancestors sample category is {e_cat}")
+        if "direct_ancestor" not in entity:
+            LOGGER.debug(f"walk_ancestors fetching dead-end sample {e_id}")
+            entity = fetch_entity_info(e_id)
+            LOGGER.debug("walk_ancestors fetch yielded:\n%s",
+                         pformat(entity, depth=2))
+            LOGGER.debug("walk_ancestors end of walk jump result")
+        new_entity = entity.get("direct_ancestor", {})
+        if e_type == "Donor":
+            rslt.append((e_id, entity, None))
+        else:
+            rslt.append((e_id, entity, walk_ancestors(new_entity, continue_test)))
+    else:
+        LOGGER.warning(f"walk_ancestors UNKNOWN ETYPE {e_type} for {e_id}")
+    return rslt

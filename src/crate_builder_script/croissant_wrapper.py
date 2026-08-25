@@ -2,15 +2,15 @@ import json
 import logging
 from os import walk
 from pprint import pformat, pprint
-from venv import logger
 
 import mlcroissant as mlc
 
-from api_calls import fetch_entity_info
+from api_calls import fetch_entity_info, walk_ancestors
 
 LOGGER = logging.getLogger(__name__)
 
 HUBMAP = "https://hubmapconsortium.org/"
+
 
 def _own_dag(entity: dict) -> list:
     return (entity.get("ingest_metadata") or {}).get("dag_provenance_list", [])
@@ -81,41 +81,6 @@ def _acquisition_activity(entity: dict, md: dict) -> dict:
     return {k: v for k, v in act.items() if v not in (None, "", [])}
 
 
-def walk_ancestors(entity: dict) -> list[dict]:
-    """Return a list of ancestor entities, starting with the immediate parent."""
-    rslt = []
-    e_type = entity.get("entity_type")
-    e_id = entity.get("hubmap_id")
-    LOGGER.debug(f"walk_ancestors {e_id} {e_type}")
-    if e_type == "Dataset":
-        ancs = [walk_ancestors(anc) for anc in entity.get("direct_ancestors", [])]
-        if ancs:
-            rslt.append((e_type, e_id, ancs))
-        else:
-            md = entity.get("metadata", {})
-            if "parent_sample_id" in md:
-                samp_id = md["parent_sample_id"]
-                samp_entity = fetch_entity_info(samp_id)
-                rslt.append((e_type, e_id, walk_ancestors(samp_entity)))
-    elif e_type in ("Sample", "Donor"):
-        e_cat = entity.get("sample_category", "UNKNOWN SAMPLE CATEGORY")
-        LOGGER.debug(f"walk_ancestors sample category is {e_cat}")
-        if "direct_ancestor" not in entity:
-            LOGGER.debug(f"walk_ancestors fetching dead-end sample {e_id}")
-            entity = fetch_entity_info(e_id)
-            LOGGER.debug("walk_ancestors fetch yielded:\n%s",
-                         pformat(entity, depth=2))
-            LOGGER.debug("walk_ancestors end of walk jump result")
-        new_entity = entity.get("direct_ancestor", {})
-        if e_type == "Donor":
-            rslt.append((f"{e_type}", e_id, None))
-        else:
-            rslt.append((f"{e_type} {e_cat}", e_id, walk_ancestors(new_entity)))
-    else:
-        LOGGER.warning(f"walk_ancestors UNKNOWN ETYPE {e_type} for {e_id}")
-    return rslt
-
-
 def _specimen_chain(entity: dict, recur=0) -> dict:
     if recur > 10:
         LOGGER.warning("Recursion limit reached in _specimen_chain for entity %s", entity.get("hubmap_id"))
@@ -132,8 +97,6 @@ def _specimen_chain(entity: dict, recur=0) -> dict:
                                       "z": r.get("z_dimension"), "unit": r.get("dimension_units")}
         return {k: v for k, v in n.items() if v not in (None, "", [])}
     order = {"section": 0, "block": 1, "organ": 2}
-    anc_entities = walk_ancestors(entity)
-    LOGGER.info("Ancestor entities for %s: %s", entity.get("hubmap_id"), anc_entities)
     return None
     """ while "direct_ancestors" in entity and entity["direct_ancestors"]:
         parent_entity = entity["direct_ancestors"][0]
@@ -169,8 +132,6 @@ def build_embedded_provenance(entity, context, md, descendants=None, raw_entity=
     (which carries the acquisition activity + specimen chain). RAW subject: wasGeneratedBy
     acquisition; wasDerivedFrom specimen chain; + a light forward pointer to processed versions.
     """
-    test_chain = walk_ancestors(entity)
-    LOGGER.info("walk_ancestors for %s: %s", entity.get("hubmap_id"), test_chain)
     if is_processed(entity) and raw_entity is not None:
         raw_node = {
             "@type": "prov:Entity", "@id": HUBMAP + (raw_entity.get("hubmap_id") or ""),
@@ -196,6 +157,18 @@ def build_embedded_provenance(entity, context, md, descendants=None, raw_entity=
 class CroissantWrapper():
     @classmethod
     def test(cls, entity_dict: dict) -> None:
+        def walk_datasets_only(d: dict) -> bool:
+            return (d["entity_type"] == "Dataset")
+        def anc_summary_str(anc_chain: list) -> str:
+            for id, ent, sub_list in anc_chain:
+                if sub_list is None:
+                    return f"{id} {ent['entity_type']} none"
+                else:
+                    return f"{id} {ent['entity_type']} {{...}} {'[' + ' '.join(anc_summary_str([elt]) for elt in sub_list) + ']'}"
+        test_chain = walk_ancestors(entity_dict, walk_datasets_only)
+        LOGGER.info("walk_ancestors for %s: [%s]",
+                    entity_dict.get("hubmap_id"),
+                    anc_summary_str(test_chain))
         ancestors = entity_dict.get("direct_ancestors", [])
         parent_dict = ancestors[0] if len(ancestors) == 1 else None
         LOGGER.info("Testing CroissantWrapper:\n%s", 
