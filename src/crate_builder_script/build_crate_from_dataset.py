@@ -154,10 +154,16 @@ def main() -> None:
         action="store_true",
         help="Enable debug logging",
     )
+    parser.add_argument(
+        "--include_all_files",
+        action="store_true",
+        help="Include all files, even if some are not data product or qa resources"
+    )
     args = parser.parse_args()
     target_id = args.target_id
     outdir = args.outdir
     debug = args.debug
+    include_all_files = args.include_all_files
 
     if debug:
         LOGGER.setLevel(logging.DEBUG)
@@ -200,6 +206,31 @@ def main() -> None:
         [crate.add(ent) for ent in ent_l]
         crate.root_dataset["contributor"] = ent_l
 
+    # I don't know why this isn't needed
+    #crate.root_dataset.append_to("hasPart", croissant_crate_file)
+
+    if "files" in ds_info:
+        # This is a derived dataset- include only data products and qa_qc files
+        for fl in ds_info["files"]:
+            if fl["is_data_product"] or fl["is_qa_qc"] or include_all_files:
+                LOGGER.debug(f"Adding {fl['rel_path']}")
+                crate.add_file(
+                    api_calls.asset_url(ds_info["uuid"], fl["rel_path"]),
+                    validate_url=True
+                )
+                wrapped_croissant.add_file(ds_info["uuid"],
+                                           fl, blk_idx.get(fl["rel_path"]))
+            else:
+                LOGGER.debug(f"{fl['rel_path']} is not a data product")
+    else:
+        for fl_blk in blk_idx.values():
+            crate.add_file(
+                api_calls.asset_url(ds_info["uuid"], fl_blk["path"]),
+                validate_url=True
+            )
+            # We have no descriptive info for these files, so it's hard
+            # to see how we could add them to the Croissant object
+
     tmpdir = TemporaryDirectory()
 
     if not os.path.isdir(outdir):
@@ -215,26 +246,6 @@ def main() -> None:
         }
     )
 
-    # I don't know why this isn't needed
-    #crate.root_dataset.append_to("hasPart", croissant_crate_file)
-
-    if "files" in ds_info:
-        # This is a derived dataset- include only data products and qa_qc files
-        for fl in ds_info["files"]:
-            if fl["is_data_product"] or fl["is_qa_qc"]:
-                LOGGER.debug(f"Adding {fl['rel_path']}")
-                crate.add_file(
-                    api_calls.asset_url(ds_info["uuid"], fl["rel_path"]),
-                    validate_url=True
-                )
-            else:
-                LOGGER.debug(f"{fl['rel_path']} is not a data product")
-    else:
-        for fl_blk in blk_idx.values():
-            crate.add_file(
-                api_calls.asset_url(ds_info["uuid"], fl_blk["path"]),
-                validate_url=True
-            )
     crate.write_zip(os.path.join(outdir, f"{target_id}_crate.zip"))
     tmpdir.cleanup()
 

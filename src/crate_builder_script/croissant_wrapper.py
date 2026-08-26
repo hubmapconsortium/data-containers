@@ -5,11 +5,23 @@ from pprint import pformat, pprint
 
 import mlcroissant as mlc
 
-from api_calls import fetch_entity_info, walk_ancestors, listify
+from api_calls import fetch_entity_info, walk_ancestors, listify, asset_url
 
 LOGGER = logging.getLogger(__name__)
 
 HUBMAP = "https://hubmapconsortium.org/"
+
+EDAM_INFO = {
+    "EDAM_1.24.format_3727" : {"desc":"tiff", "mime":"image/tiff"},
+    "EDAM_1.24.format_3464" : {"desc":"json", "mime":"application/json"},
+    "EDAM_1.24.format_3508" : {"desc":"pdf"},
+    "EDAM_1.24.format_3590" : {"desc":"hdf5", "mime":"application/x-hdf5"},
+    "EDAM_1.24.format_3987" : {"desc":"zip", "mime":"application/zip"},
+    "EDAM_1.24.format_3752" : {"desc":"csv", "mime":"text/csv"},
+    "EDAM_1.24.format_3755" : {"desc":"tsv", "mime":"text/tab-separated-values"},
+    "EDAM_1.24.format_3790" : {"desc":"h5ad (anndata)", "mime":"application/x-hdf5"},
+    "EDAM_1.24.format_3915" : {"desc":"zarr", "mime":"application/vnd.zarr"},
+}
 
 
 def _own_dag(entity: dict) -> list:
@@ -176,11 +188,29 @@ class CroissantWrapper():
         self.file_objects = []
         self.record_sets = []
 
-    def add_file(self, file_obj: mlc.FileObject):
-        self.file_objects.append(file_obj)
+    def add_file(self, ds_uuid: str, file_info: dict, file_blk: dict | None) -> None:
+        args = {
+            "id" : file_info["rel_path"],
+            "name" : file_info["rel_path"],
+            "description" : file_info["description"],
+            "content_url" : asset_url(ds_uuid, file_info["rel_path"])
+        }
+        if file_blk:
+            args["sha256"] = file_blk["sha256_checksum"]
+            if edam := file_info.get("edam_term"):
+                if edam in EDAM_INFO:
+                    args["encoding_formats"] = [EDAM_INFO[edam]["mime"]]
+                else:
+                    LOGGER.warning(f"Unknown EDAM format {edam} for {pformat(file_info)}")
+                    args["encoding_formats"] = ["application/octet-stream"]
+            else:
+                args[encoding_formats] = ["application/octet-stream"]
+        self.file_objects.append(mlc.FileObject(**args))
 
-    def add_record_set(self, record_set: mlc.RecordSet):
-        self.record_sets.append(record_set)
+
+    # def add_record_set(self, record_set: mlc.RecordSet):
+    #     self.record_sets.append(record_set)
+
 
     def write(self, croissant_filename: str):
         croissant_meta = mlc.Metadata(
@@ -189,7 +219,7 @@ class CroissantWrapper():
             description=self.description,
             distribution=self.file_objects,
             record_sets=self.record_sets,
-        ctx=mlc.Context(
+            ctx=mlc.Context(
                 is_live_dataset=False
             )
         ).to_json()
