@@ -5,7 +5,7 @@ from pprint import pformat, pprint
 
 import mlcroissant as mlc
 
-from api_calls import fetch_entity_info, walk_ancestors
+from api_calls import fetch_entity_info, walk_ancestors, listify
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,8 +33,6 @@ def _protocol_dois(md: dict) -> list[str]:
 
 
 def _pipeline_steps(dag_list: list) -> list[dict]:
-    return [{}]
-"""
     steps, seen = [], set()
     for s in dag_list or []:
         repo = (s.get("origin") or "").strip().replace(".git", "")
@@ -47,7 +45,6 @@ def _pipeline_steps(dag_list: list) -> list[dict]:
         seen.add(key)
         steps.append({"name": name, "repo": repo, "commit": commit, "cwl": cwl})
     return steps
-"""
 
 def _acquisition_activity(entity: dict, md: dict) -> dict:
     def agent(name, role=None, org=False):
@@ -82,9 +79,6 @@ def _acquisition_activity(entity: dict, md: dict) -> dict:
 
 
 def _specimen_chain(entity: dict, recur=0) -> dict:
-    if recur > 10:
-        LOGGER.warning("Recursion limit reached in _specimen_chain for entity %s", entity.get("hubmap_id"))
-        return {}
     def node(anc):
         n = {"@type": "prov:Entity", "@id": HUBMAP + (anc.get("hubmap_id") or ""),
              "schema:name": anc.get("hubmap_id"), "hubmap:entityType": anc.get("entity_type"),
@@ -96,12 +90,11 @@ def _specimen_chain(entity: dict, recur=0) -> dict:
             n["hubmap:dimensions"] = {"x": r.get("x_dimension"), "y": r.get("y_dimension"),
                                       "z": r.get("z_dimension"), "unit": r.get("dimension_units")}
         return {k: v for k, v in n.items() if v not in (None, "", [])}
+    ancs = listify(
+        walk_ancestors(entity),
+        omit_test=lambda dct: dct["entity_type"]=="Dataset"
+    )
     order = {"section": 0, "block": 1, "organ": 2}
-    return None
-    """ while "direct_ancestors" in entity and entity["direct_ancestors"]:
-        parent_entity = entity["direct_ancestors"][0]
-        ancs.append(entity)
-    ancs = [a for a in context.get("ancestors", []) if a.get("entity_type") in ("Sample", "Donor")]
     ancs.sort(key=lambda a: order.get(a.get("sample_category"), 4))
     derived = None
     for anc in reversed(ancs):
@@ -110,10 +103,9 @@ def _specimen_chain(entity: dict, recur=0) -> dict:
             n["prov:wasDerivedFrom"] = derived
         derived = n
     return derived
- """
+
+
 def _pipeline_activity(dag_list: list) -> dict:
-    return {}
-"""
     agents = []
     for st in _pipeline_steps(dag_list):
         a = {"@type": ["prov:SoftwareAgent", "schema:SoftwareApplication"],
@@ -124,15 +116,26 @@ def _pipeline_activity(dag_list: list) -> dict:
     if agents:
         act["prov:wasAssociatedWith"] = agents
     return act
-"""
 
-def build_embedded_provenance(entity, context, md, descendants=None, raw_entity=None, raw_md=None) -> dict:
+
+def build_embedded_provenance(entity, md, descendants=None) -> dict:
     """
     PROCESSED subject: wasGeneratedBy its own pipeline; wasDerivedFrom the raw parent
     (which carries the acquisition activity + specimen chain). RAW subject: wasGeneratedBy
     acquisition; wasDerivedFrom specimen chain; + a light forward pointer to processed versions.
     """
-    if is_processed(entity) and raw_entity is not None:
+    if is_processed(entity):
+        hubmap_id = entity["hubmap_id"]
+        ancestor_chain = walk_ancestors(
+            entity,
+            lambda d: d["entity_type"] == "Dataset"
+        )
+        assert len(ancestor_chain) == 1, "internal error walking ancestors"
+        check_id, ignored_entity, ancestors = ancestor_chain[0]
+        assert check_id == hubmap_id
+        assert len(ancestors) == 1, f"Dataset {hubmap_id} has too many ancestors"
+        raw_id, raw_entity, ignored = ancestors[0]
+        raw_md = raw_entity.get("metadata")
         raw_node = {
             "@type": "prov:Entity", "@id": HUBMAP + (raw_entity.get("hubmap_id") or ""),
             "schema:name": raw_entity.get("hubmap_id"),
@@ -140,7 +143,6 @@ def build_embedded_provenance(entity, context, md, descendants=None, raw_entity=
             "prov:wasGeneratedBy": _acquisition_activity(raw_entity, raw_md or {}),
             "prov:wasDerivedFrom": _specimen_chain(raw_entity)
         }
-        #raw_node = {k: v for k, v in raw_node.items() if v}
         return {"prov:wasGeneratedBy": _pipeline_activity(_own_dag(entity)),
                 "prov:wasDerivedFrom": raw_node}
     provo = {"prov:wasGeneratedBy": _acquisition_activity(entity, md)}
@@ -157,31 +159,16 @@ def build_embedded_provenance(entity, context, md, descendants=None, raw_entity=
 class CroissantWrapper():
     @classmethod
     def test(cls, entity_dict: dict) -> None:
-        def walk_datasets_only(d: dict) -> bool:
-            return (d["entity_type"] == "Dataset")
-        def anc_summary_str(anc_chain: list) -> str:
-            for id, ent, sub_list in anc_chain:
-                if sub_list is None:
-                    return f"{id} {ent['entity_type']} none"
-                else:
-                    return f"{id} {ent['entity_type']} {{...}} {'[' + ' '.join(anc_summary_str([elt]) for elt in sub_list) + ']'}"
-        test_chain = walk_ancestors(entity_dict, walk_datasets_only)
-        LOGGER.info("walk_ancestors for %s: [%s]",
-                    entity_dict.get("hubmap_id"),
-                    anc_summary_str(test_chain))
-        ancestors = entity_dict.get("direct_ancestors", [])
-        parent_dict = ancestors[0] if len(ancestors) == 1 else None
-        LOGGER.info("Testing CroissantWrapper:\n%s", 
-                    pformat(
-                        build_embedded_provenance(
-                            entity_dict,
-                            {}, # context
-                            entity_dict.get("metadata"), # md
-                            descendants=entity_dict.get("direct_descendants", []),
-                            raw_entity=parent_dict,
-                            raw_md=parent_dict.get("metadata") if parent_dict else None
-                        )
-                    ))
+        LOGGER.info(
+            "Testing CroissantWrapper:\n%s", 
+            pformat(
+                build_embedded_provenance(
+                    entity_dict,
+                    md=entity_dict.get("metadata"),
+                    descendants=entity_dict.get("direct_descendants", [])
+                )
+            )
+        )
     
     def __init__(self, name: str, description: str):
         self.name = name
@@ -202,7 +189,7 @@ class CroissantWrapper():
             description=self.description,
             distribution=self.file_objects,
             record_sets=self.record_sets,
-            ctx=mlc.Context(
+        ctx=mlc.Context(
                 is_live_dataset=False
             )
         ).to_json()
@@ -211,7 +198,15 @@ class CroissantWrapper():
                 "mlc": "https://mlcommons.org/",
                 "prov": "http://www.w3.org/ns/prov#",
                 "schema": "http://schema.org/"
-            }),
+            })
+        entity_dict = fetch_entity_info(self.name)
+        croissant_meta.update(
+            build_embedded_provenance(
+                entity_dict,
+                md=entity_dict.get("metadata"), # md
+                descendants=entity_dict.get("direct_descendants", [])
+            )
+        )
         with open(croissant_filename, "w", encoding="utf-8") as f:
             json.dump(croissant_meta, f, indent=2)
 

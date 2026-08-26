@@ -105,3 +105,15 @@ def walk_ancestors(
     else:
         LOGGER.warning(f"walk_ancestors UNKNOWN ETYPE {e_type} for {e_id}")
     return rslt
+
+
+def listify(ancestor_chain: list, omit_test: Callable[[dict], bool]) -> list:
+    assert len(ancestor_chain) == 1, "listify must start on a 1-tuple chain"
+    hubmap_id, entity_dict, ancestors = ancestor_chain[0]
+    rslt = []
+    if not omit_test(entity_dict):
+        rslt.append(entity_dict)
+    if ancestors:
+        for anc in ancestors:
+            rslt.extend(listify([anc], omit_test))
+    return rslt

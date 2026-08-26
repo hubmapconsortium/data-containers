@@ -178,7 +178,6 @@ def main() -> None:
     crate = ROCrate()
     crate.root_dataset["name"] = target_id
     crate.root_dataset["description"] = ds_info["title"]
-    CroissantWrapper.test(ds_info)
     wrapped_croissant = CroissantWrapper(target_id, ds_info["title"])
 
     if "doi_url" in ds_info:
