@@ -187,6 +187,10 @@ class CroissantWrapper():
         self.description = description
         self.file_objects = []
         self.record_sets = []
+        self.cite_as = None
+        self.date_published = None
+        self.license = None
+        self.version = None
 
     def add_file(self, ds_uuid: str, file_info: dict, file_blk: dict | None) -> None:
         args = {
@@ -213,16 +217,23 @@ class CroissantWrapper():
 
 
     def write(self, croissant_filename: str):
-        croissant_meta = mlc.Metadata(
-            id="croissant-spec",
-            name=self.name,
-            description=self.description,
-            distribution=self.file_objects,
-            record_sets=self.record_sets,
-            ctx=mlc.Context(
-                is_live_dataset=False
-            )
-        ).to_json()
+        args = {
+            "id" : "croissant-spec",
+            "name" : self.name,
+            "description" : self.description,
+            "distribution" : self.file_objects,
+            "record_sets" : self.record_sets,
+            "ctx" : mlc.Context(is_live_dataset=False)
+        }
+        if self.date_published:
+            args["date_published"] = self.date_published
+        if self.license:
+            args["license"] = self.license
+        if self.version:
+            args["version"] = self.version
+        if self.cite_as:
+            args["cite_as"] = self.cite_as
+        croissant_meta = mlc.Metadata(**args).to_json()
         croissant_meta["@context"].update({
                 "hubmap": "https://hubmapconsortium.org/",
                 "mlc": "https://mlcommons.org/",

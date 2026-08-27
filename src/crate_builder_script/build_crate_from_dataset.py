@@ -29,8 +29,18 @@ NIH_URI = "https://ror.org/01cwqze88"
 ORCID_URI = "https://orcid.org"
 OBOLIB_URI = "http://purl.obolibrary.org/obo"
 
-# TARGET_ID = "HBM567.VCBK.562"
-# TARGET_ID = "HBM487.HJZB.546"  # primary dataset
+###############
+# Notes-
+# - count_versions() is essentially untested, for lack of an example
+# - croissant cite_as uses the DOI, and that only gets set for primary datasets. Do we
+#   want to reference the primary dataset's DOI as the derived dataset's cite_as?
+# - unpublished examples:
+#   TARGET_ID = "HBM567.VCBK.562"
+#   TARGET_ID = "HBM487.HJZB.546"  # primary dataset
+# - published examples:
+#   TARGET_ID = "HBM866.VMBK.952"
+#   TARGET_ID = "HBM473.QLDT.264"
+###############
 
 
 def build_funder_entity(crate: ROCrate) -> ContextEntity:
@@ -134,6 +144,14 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
     return ent_l
 
 
+def count_versions(ds_info: dict) -> int:
+    if "previous_version_uuid" in ds_info:
+        return (count_versions(api_calls.fetch_entity_info(ds_info["previous_version_uuid"]))
+                + 1)
+    else:
+        return 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -190,16 +208,27 @@ def main() -> None:
         doi_url = ds_info["doi_url"]
         crate.root_dataset["identifier"] = doi_url
         crate.root_dataset["sameAs"] = doi_url
+        wrapped_croissant.cite_as = doi_url
 
     if "published_timestamp" in ds_info:
-        crate.root_dataset["datePublished"] = str(
+        date_published = str(
             datetime.fromtimestamp(ds_info["published_timestamp"] // 1000).astimezone(
                 timezone.utc
             )
         )
+        crate.root_dataset["datePublished"] = date_published
+        wrapped_croissant.date_published = date_published
 
-    crate.root_dataset["license"] = crate.add(build_license_entity(crate))
+    license_entity = build_license_entity(crate)
+    crate.root_dataset["license"] = crate.add(license_entity)
+    wrapped_croissant.license = license_entity.properties()["url"]
+
     crate.root_dataset["funder"] = crate.add(build_funder_entity(crate))
+
+    ds_version = count_versions(ds_info)
+    crate.root_dataset["version"] = ds_version
+    wrapped_croissant.version = ds_version
+
     if contributors := ds_info.get("contributors"):
         crate.add(build_pi_entity(crate))
         ent_l = build_contributors(crate, contributors)
