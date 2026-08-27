@@ -34,6 +34,12 @@ OBOLIB_URI = "http://purl.obolibrary.org/obo"
 # - count_versions() is essentially untested, for lack of an example
 # - croissant cite_as uses the DOI, and that only gets set for primary datasets. Do we
 #   want to reference the primary dataset's DOI as the derived dataset's cite_as?
+# - Some EDAM codes, e.g. 3916 (adjacency matrix), are not sufficient to specify
+#   the mime type to associate with a file.  Should we use extensions instead? Some
+#   specialization would be lost.
+# - Writing a croissant for a file in an unpublished dataset results in an error at
+#   validation time because the file block information from uuid-api has not yet been
+#   set so the sha256 code is not known.
 # - unpublished examples:
 #   TARGET_ID = "HBM567.VCBK.562"
 #   TARGET_ID = "HBM487.HJZB.546"  # primary dataset
@@ -145,9 +151,11 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
 
 
 def count_versions(ds_info: dict) -> int:
-    if "previous_version_uuid" in ds_info:
-        return (count_versions(api_calls.fetch_entity_info(ds_info["previous_version_uuid"]))
-                + 1)
+    if "previous_revision_uuid" in ds_info:
+        return (
+            count_versions(api_calls.fetch_entity_info(ds_info["previous_revision_uuid"]))
+            + 1
+        )
     else:
         return 1
 
@@ -226,6 +234,7 @@ def main() -> None:
     crate.root_dataset["funder"] = crate.add(build_funder_entity(crate))
 
     ds_version = count_versions(ds_info)
+    print(f"VERSION: {ds_version}")
     crate.root_dataset["version"] = ds_version
     wrapped_croissant.version = ds_version
 
@@ -234,9 +243,6 @@ def main() -> None:
         ent_l = build_contributors(crate, contributors)
         [crate.add(ent) for ent in ent_l]
         crate.root_dataset["contributor"] = ent_l
-
-    # I don't know why this isn't needed
-    #crate.root_dataset.append_to("hasPart", croissant_crate_file)
 
     if "files" in ds_info:
         # This is a derived dataset- include only data products and qa_qc files
@@ -274,6 +280,8 @@ def main() -> None:
             "conformsTo": "http://mlcommons.org"
         }
     )
+    # I don't know why this isn't needed
+    #crate.root_dataset.append_to("hasPart", croissant_crate_file)
 
     crate.write_zip(os.path.join(outdir, f"{target_id}_crate.zip"))
     tmpdir.cleanup()
