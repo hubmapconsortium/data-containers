@@ -14,13 +14,16 @@ HUBMAP = "https://hubmapconsortium.org/"
 EDAM_INFO = {
     "EDAM_1.24.format_3727" : {"desc":"tiff", "mime":"image/tiff"},
     "EDAM_1.24.format_3464" : {"desc":"json", "mime":"application/json"},
-    "EDAM_1.24.format_3508" : {"desc":"pdf"},
+    "EDAM_1.24.format_3508" : {"desc":"pdf", "mime":"application/pdf"},
     "EDAM_1.24.format_3590" : {"desc":"hdf5", "mime":"application/x-hdf5"},
     "EDAM_1.24.format_3987" : {"desc":"zip", "mime":"application/zip"},
     "EDAM_1.24.format_3752" : {"desc":"csv", "mime":"text/csv"},
     "EDAM_1.24.format_3755" : {"desc":"tsv", "mime":"text/tab-separated-values"},
     "EDAM_1.24.format_3790" : {"desc":"h5ad (anndata)", "mime":"application/x-hdf5"},
     "EDAM_1.24.format_3915" : {"desc":"zarr", "mime":"application/vnd.zarr"},
+    "EDAM_1.24.format_4006" : {"desc":"zarr (spatialdata)", "mime":"application/vnd.zarr"},
+    "EDAM_1.24.data_3671" : {"desc":"plain text", "mime":"text/plain"},
+    "EDAM_1.24.format_3916" : {"desc":"adjacency matrix", "mime":"text/plain"}
 }
 
 
@@ -199,16 +202,16 @@ class CroissantWrapper():
             "description" : file_info["description"],
             "content_url" : asset_url(ds_uuid, file_info["rel_path"])
         }
+        if edam := file_info.get("edam_term"):
+            if edam in EDAM_INFO:
+                args["encoding_formats"] = [EDAM_INFO[edam]["mime"]]
+            else:
+                LOGGER.warning(f"Unknown EDAM format {edam} for {pformat(file_info)}")
+                args["encoding_formats"] = ["application/octet-stream"]
+        else:
+            args[encoding_formats] = ["application/octet-stream"]
         if file_blk:
             args["sha256"] = file_blk["sha256_checksum"]
-            if edam := file_info.get("edam_term"):
-                if edam in EDAM_INFO:
-                    args["encoding_formats"] = [EDAM_INFO[edam]["mime"]]
-                else:
-                    LOGGER.warning(f"Unknown EDAM format {edam} for {pformat(file_info)}")
-                    args["encoding_formats"] = ["application/octet-stream"]
-            else:
-                args[encoding_formats] = ["application/octet-stream"]
         self.file_objects.append(mlc.FileObject(**args))
 
 
