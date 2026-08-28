@@ -5,7 +5,13 @@ from pprint import pformat, pprint
 
 import mlcroissant as mlc
 
-from api_calls import fetch_entity_info, walk_ancestors, listify, asset_url
+from api_calls import (
+    fetch_entity_info, 
+    walk_ancestors, 
+    listify, 
+    asset_url,
+    is_processed
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,11 +35,6 @@ EDAM_INFO = {
 
 def _own_dag(entity: dict) -> list:
     return (entity.get("ingest_metadata") or {}).get("dag_provenance_list", [])
-
-
-def is_processed(entity: dict) -> bool:
-    """Raw vs processed: `creation_action` is 'Create Dataset Activity' vs 'Central Process'."""
-    return "process" in (entity.get("creation_action") or "").lower()
 
 
 def _protocol_dois(md: dict) -> list[str]:

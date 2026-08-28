@@ -117,3 +117,9 @@ def listify(ancestor_chain: list, omit_test: Callable[[dict], bool]) -> list:
         for anc in ancestors:
             rslt.extend(listify([anc], omit_test))
     return rslt
+
+
+def is_processed(entity: dict) -> bool:
+    """Raw vs processed: `creation_action` is 'Create Dataset Activity' vs 'Central Process'."""
+    return "process" in (entity.get("creation_action") or "").lower()
+

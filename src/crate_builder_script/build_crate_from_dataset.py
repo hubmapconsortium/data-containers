@@ -10,6 +10,8 @@ from tempfile import TemporaryDirectory
 
 from rocrate.model.contextentity import ContextEntity
 from rocrate.model.person import Person
+from rocrate.model.dataset import Dataset
+from rocrate.model.computerlanguage import ComputerLanguage
 from rocrate.rocrate import ROCrate
 
 import api_calls
@@ -45,7 +47,7 @@ OBOLIB_URI = "http://purl.obolibrary.org/obo"
 #   TARGET_ID = "HBM487.HJZB.546"  # primary dataset
 # - published examples:
 #   TARGET_ID = "HBM866.VMBK.952"
-#   TARGET_ID = "HBM473.QLDT.264"
+#   TARGET_ID = "HBM473.QLDT.264"  # primary dataset
 ###############
 
 
@@ -160,6 +162,61 @@ def count_versions(ds_info: dict) -> int:
         return 1
 
 
+def build_derived_prov(ds_info: dict, crate: ROCrate) -> ContextEntity:
+    prov_chain = api_calls.walk_ancestors(
+        ds_info,
+        lambda d: d["entity_type"] == "Dataset"
+    )
+    assert len(prov_chain) == 1
+    assert len(prov_chain[0]) == 3 
+    hubmap_id, parent_chain = prov_chain[0][0], prov_chain[0][2]
+    parent_id_list = []
+    for tuple in parent_chain:
+        parent_id, parent_info = tuple[0:2]
+        crate.add(Dataset(
+            crate,
+            parent_info["doi_url"],
+            properties={
+                "name": parent_id,
+                "description": parent_info["description"]
+            }
+        ))
+        parent_id_list.append(parent_info["doi_url"])
+    agent = crate.add(Person(  # TODO this should be Hubmap internal process?
+        crate,
+        "https://orcid.org",
+        properties={"name": "Joe Schmoe"}
+    ))
+    python_lang = crate.add(ComputerLanguage(  # TODO this is surely wrong here
+        crate,
+        identifier="https://python.org",
+        properties={"name": "Python", "version": "3.11", "url": "https://python.org"}
+    ))
+    workflow_file = crate.add_file(
+        "https://github.com/hubmapconsortium/data-containers/blob/85441770eafe7da487b35d76112ec099d7b5b8f7/src/crate_builder_script/build_crate_from_dataset.py",
+        properties={
+            "@type": ["File", "SoftwareSourceCode"],
+            "name":"build_crate_from_dataset.py",
+            "description": "this should be the dag description. But how to reference CWLs?",
+            "programmingLanguage": {"@id": python_lang.id}
+        }
+    )
+    props = {
+        "@id": "#some_workflow",
+        "@type": "CreateAction",
+        "name": "the-create-action",
+        "startTime": datetime.now().isoformat(),
+        "endTime": datetime.now().isoformat(),
+        "agent": {"@id": agent.id},
+        "instrument": {"@id": workflow_file.id},
+        "object": [{"@id": this_id} for this_id in parent_id_list],
+        "result": [{"@id": "./"}],  # the target dataset
+        "actionStatus": "CompletedActionStatus"
+    }
+    return ContextEntity(crate, identifier=props["@id"], properties=props)
+
+    
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -243,6 +300,10 @@ def main() -> None:
         ent_l = build_contributors(crate, contributors)
         [crate.add(ent) for ent in ent_l]
         crate.root_dataset["contributor"] = ent_l
+
+    if api_calls.is_processed(ds_info):
+        print("PING!")
+        crate.add(build_derived_prov(ds_info, crate))
 
     if "files" in ds_info:
         # This is a derived dataset- include only data products and qa_qc files
