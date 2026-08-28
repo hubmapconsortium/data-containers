@@ -8,10 +8,17 @@ from pprint import pformat, pprint
 from typing import Any, List
 from tempfile import TemporaryDirectory
 
-from rocrate.model.contextentity import ContextEntity
-from rocrate.model.person import Person
-from rocrate.model.dataset import Dataset
-from rocrate.model.computerlanguage import ComputerLanguage
+# from rocrate.model.contextentity import ContextEntity
+# from rocrate.model.person import Person
+# from rocrate.model.dataset import Dataset
+# from rocrate.model.computerlanguage import ComputerLanguage
+from rocrate.model import (
+    ContextEntity,
+    Person,
+    Dataset,
+    ComputerLanguage,
+    SoftwareApplication
+)
 from rocrate.rocrate import ROCrate
 
 import api_calls
@@ -182,10 +189,24 @@ def build_derived_prov(ds_info: dict, crate: ROCrate) -> ContextEntity:
             }
         ))
         parent_id_list.append(parent_info["doi_url"])
-    agent = crate.add(Person(  # TODO this should be Hubmap internal process?
+    # agent = crate.add(Person(  # TODO this should be Hubmap internal process?
+    #     crate,
+    #     "https://orcid.org",
+    #     properties={"name": "Joe Schmoe"}
+    # ))
+    hubmap_org = crate.add(ContextEntity(
         crate,
-        "https://orcid.org",
-        properties={"name": "Joe Schmoe"}
+        api_calls.HUBMAP_ORG_ENTITY,
+        properties={
+            "@type": "Organization",
+            "name": "HuBMAP Consortium",
+            "url": api_calls.HUBMAP_ORG_ENTITY
+        }
+    ))
+    agent = crate.add(SoftwareApplication(
+        crate,
+        "HuBMAP Process",
+        properties={"parentOrganization": {"@id": hubmap_org.id}}
     ))
     python_lang = crate.add(ComputerLanguage(  # TODO this is surely wrong here
         crate,
@@ -291,7 +312,6 @@ def main() -> None:
     crate.root_dataset["funder"] = crate.add(build_funder_entity(crate))
 
     ds_version = count_versions(ds_info)
-    print(f"VERSION: {ds_version}")
     crate.root_dataset["version"] = ds_version
     wrapped_croissant.version = ds_version
 
@@ -302,7 +322,6 @@ def main() -> None:
         crate.root_dataset["contributor"] = ent_l
 
     if api_calls.is_processed(ds_info):
-        print("PING!")
         crate.add(build_derived_prov(ds_info, crate))
 
     if "files" in ds_info:

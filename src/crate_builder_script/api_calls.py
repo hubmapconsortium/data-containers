@@ -14,6 +14,9 @@ UUID_API = "https://uuid.api.hubmapconsortium.org"
 
 AUTH_TOK = os.environ["AUTH_TOK"]
 
+HUBMAP = "https://hubmapconsortium.org/"
+
+HUBMAP_ORG_ENTITY = HUBMAP  # for lack of a better choice
 
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
     resp = requests.get(

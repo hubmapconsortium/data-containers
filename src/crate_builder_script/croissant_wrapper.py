@@ -10,12 +10,11 @@ from api_calls import (
     walk_ancestors, 
     listify, 
     asset_url,
-    is_processed
+    is_processed,
+    HUBMAP
 )
 
 LOGGER = logging.getLogger(__name__)
-
-HUBMAP = "https://hubmapconsortium.org/"
 
 EDAM_INFO = {
     "EDAM_1.24.format_3727" : {"desc":"tiff", "mime":"image/tiff"},
