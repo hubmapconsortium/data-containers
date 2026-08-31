@@ -189,11 +189,6 @@ def build_derived_prov(ds_info: dict, crate: ROCrate) -> ContextEntity:
             }
         ))
         parent_id_list.append(parent_info["doi_url"])
-    # agent = crate.add(Person(  # TODO this should be Hubmap internal process?
-    #     crate,
-    #     "https://orcid.org",
-    #     properties={"name": "Joe Schmoe"}
-    # ))
     hubmap_org = crate.add(ContextEntity(
         crate,
         api_calls.HUBMAP_ORG_ENTITY,
@@ -216,12 +211,13 @@ def build_derived_prov(ds_info: dict, crate: ROCrate) -> ContextEntity:
     workflow_file = crate.add_file(
         "https://github.com/hubmapconsortium/data-containers/blob/85441770eafe7da487b35d76112ec099d7b5b8f7/src/crate_builder_script/build_crate_from_dataset.py",
         properties={
-            "@type": ["File", "SoftwareSourceCode"],
+            "@type": ["File", "SoftwareSourceCode", "ComputationalWorkflow"],
             "name":"build_crate_from_dataset.py",
             "description": "this should be the dag description. But how to reference CWLs?",
             "programmingLanguage": {"@id": python_lang.id}
         }
     )
+    crate.mainEntity = workflow_file
     props = {
         "@id": "#some_workflow",
         "@type": "CreateAction",
@@ -285,7 +281,74 @@ def main() -> None:
     # The dataset DOIs point to the Portal, which is basically a landing page, which is
     # forbidden as the direct link for a dataset under FAIR.  So we can't use the DOI
     # as the crate root dataset id.
-    crate = ROCrate()
+    crate = ROCrate(version="1.1")
+    print(f"CRATE: \n{pformat(crate.root_dataset.get('conformsTo'))}")
+
+    base_crate_ctx_id = f"https://w3id.org/ro/crate/{crate.version}"
+    # base_crate_ctx_id = f"https://w3id.org"
+    print(f"CRATE CTX ID: " + base_crate_ctx_id)
+    crate_profile = crate.add(ContextEntity(
+        crate,
+        base_crate_ctx_id,
+        properties={
+            "@type": ["CreativeWork", "Profile"],
+            "name": "RO-Crate Profile",
+            "version": crate.version
+        }
+    ))
+    proc_profile = crate.add(ContextEntity(
+        crate,
+        "https://w3id.org/ro/wfrun/process/0.5",
+        properties={
+            "@type": ["CreativeWork", "Profile"],
+            "name": "Process Run Crate Profile",
+            "version": "0.5"
+        }
+    ))
+    wf_profile = crate.add(ContextEntity(
+        crate,
+        "https://w3id.org/ro/wfrun/workflow/0.5",
+        properties={
+            "@type": ["CreativeWork", "Profile"],
+            "name": "Workflow Run Crate Profile",
+            "version": "0.5",
+            # "isProfileOf": {"@id": proc_profile.id}
+        }
+    ))
+    wfc_profile = crate.add(ContextEntity(
+        crate,
+        "https://w3id.org/workflowhub/workflow-ro-crate/1.0",
+        properties={
+            "@type": ["CreativeWork", "Profile"],
+            "name": "Workflow Run RO-Crate",
+            "version": "1.0"
+        }
+    ))
+    crate.root_dataset.append_to("conformsTo", {"@id": crate_profile.id})
+    # crate.root_dataset.append_to("conformsTo", {"@id": "https://w3id.org"})
+    crate.root_dataset.append_to("conformsTo", {"@id": proc_profile.id})
+    crate.root_dataset.append_to("conformsTo", {"@id": wf_profile.id})
+    crate.root_dataset.append_to("conformsTo", {"@id": wfc_profile.id})
+    # crate.metadata.extra_contexts.append("https://w3id.org/ro/wfrun/process/0.5")
+    # crate.metadata.extra_contexts.append("https://w3id.org/ro/wfrun/workflow/0.5")
+    crate.metadata.extra_contexts.append("https://w3id.org/ro/terms/workflow-run/context")
+    print(f"CRATE: \n{pformat(crate.metadata['conformsTo'])}")
+    # crate.metadata["conformsTo"] = [
+    #     # crate.metadata["conformsTo"],
+    #     {"@id": crate_profile.id},
+    #     {"@id": proc_profile.id},
+    #     {"@id": wf_profile.id},
+    #     {"@id": wfc_profile.id}
+    # ]
+    # crate.metadata["conformsTo"] = {"@id": wfc_profile.id}
+    # crate.metadata["conformsTo"] = [
+    #     crate_profile.id,
+    #     proc_profile.id,
+    #     wf_profile.id,
+    #     wfc_profile.id
+    # ]
+    crate.metadata["conformsTo"] = {"@id": crate_profile.id}
+
     crate.root_dataset["name"] = target_id
     crate.root_dataset["description"] = ds_info["title"]
     wrapped_croissant = CroissantWrapper(target_id, ds_info["title"])
@@ -351,13 +414,23 @@ def main() -> None:
     if not os.path.isdir(outdir):
         os.makedirs(outdir, exist_ok=True)
     wrapped_croissant.write(os.path.join(tmpdir.name, CROISSANT_FILENAME))
+    crate.add(ContextEntity(
+        crate,
+        "http://mlcommons.org/croissant/1.0",
+        properties={
+            "@type": ["CreativeWork", "Profile"],
+            "name": "MLCommons Croissant Format Specification",
+            "version": "1.0",
+            "url": "https://docs.mlcommons.org/croissant/docs/crossant-spec-1.0.html"
+        }
+    ))
     croissant_crate_file = crate.add_file(
         os.path.join(tmpdir.name, CROISSANT_FILENAME),
         properties={
             "name": "Croissant Metadata Descriptor",
             "description": "Machine learning data-loading configurations for this dataset.",
             "encodingFormat": "application/ld+json",
-            "conformsTo": "http://mlcommons.org"
+            "conformsTo": {"@id": "http://mlcommons.org/croissant/1.0"}
         }
     )
     # I don't know why this isn't needed
