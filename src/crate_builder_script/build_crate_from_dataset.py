@@ -329,8 +329,7 @@ def main() -> None:
     # profile that seem to exist for crate profile 1.2.
     crate = ROCrate(version="1.1")
 
-    (crate_profile, proc_profile, wf_profile, wfc_profile) = build_profiles(crate)
-    for profile in [crate_profile, proc_profile, wf_profile, wfc_profile]:
+    for profile in build_profiles(crate):
         crate.root_dataset.append_to("conformsTo", {"@id": profile.id})
 
     crate.metadata.extra_contexts.append("https://w3id.org/ro/terms/workflow-run/context")
