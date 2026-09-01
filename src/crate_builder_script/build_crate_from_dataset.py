@@ -23,7 +23,7 @@ from api_calls import (
     asset_url,
     HUBMAP_ORG_ENTITY
 )
-from extractors import walk_ancestors, is_processed
+from extractors import WrappedEntity
 from croissant_wrapper import CroissantWrapper
 
 logging.basicConfig(
@@ -161,21 +161,63 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
     return ent_l
 
 
-def count_versions(ds_info: dict) -> int:
-    if "previous_revision_uuid" in ds_info:
-        return (
-            count_versions(fetch_entity_info(ds_info["previous_revision_uuid"]))
-            + 1
-        )
-    else:
-        return 1
+def build_hubmap_org_entity(crate: ROCrate) -> ContextEntity:
+    hubmap_org = crate.add(ContextEntity(
+        crate,
+        HUBMAP_ORG_ENTITY,
+        properties={
+            "@type": "Organization",
+            "name": "HuBMAP Consortium",
+            "url": HUBMAP_ORG_ENTITY
+        }
+    ))
+    return hubmap_org
 
 
-def build_derived_prov(ds_info: dict, crate: ROCrate) -> ContextEntity:
-    prov_chain = walk_ancestors(
-        ds_info,
-        lambda d: d["entity_type"] == "Dataset"
+def build_primary_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntity:
+    """
+    This is a dummy routine for now.  It needs enough structure to define
+    crate.mainEntity.
+    """
+
+    hubmap_org = build_hubmap_org_entity(crate)
+    agent = crate.add(SoftwareApplication(
+        crate,
+        "HuBMAP Process",
+        properties={"parentOrganization": {"@id": hubmap_org.id}}
+    ))
+    python_lang = crate.add(ComputerLanguage(  # TODO this is surely wrong here
+        crate,
+        identifier="https://python.org",
+        properties={"name": "Python", "version": "3.11", "url": "https://python.org"}
+    ))
+    workflow_file = crate.add_file(
+        "https://github.com/hubmapconsortium/data-containers/blob/85441770eafe7da487b35d76112ec099d7b5b8f7/src/crate_builder_script/build_crate_from_dataset.py",
+        properties={
+            "@type": ["File", "SoftwareSourceCode", "ComputationalWorkflow"],
+            "name":"build_crate_from_dataset.py",
+            "description": "this should be the dag description. But how to reference CWLs?",
+            "programmingLanguage": {"@id": python_lang.id}
+        }
     )
+    crate.mainEntity = workflow_file
+    props = {
+        "@id": "#some_workflow",
+        "@type": "CreateAction",
+        "name": "the-create-action",
+        "startTime": datetime.now().isoformat(),
+        "endTime": datetime.now().isoformat(),
+        "agent": {"@id": agent.id},
+        "instrument": {"@id": workflow_file.id},
+        "object": [],
+        "result": [{"@id": "./"}],  # the target dataset
+        "actionStatus": "CompletedActionStatus"
+    }
+    return ContextEntity(crate, identifier=props["@id"], properties=props)
+
+
+def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntity:
+    prov_chain = ds_entity.walk_ancestors(lambda d: d["entity_type"] == "Dataset")
     assert len(prov_chain) == 1
     assert len(prov_chain[0]) == 3 
     hubmap_id, parent_chain = prov_chain[0][0], prov_chain[0][2]
@@ -191,15 +233,7 @@ def build_derived_prov(ds_info: dict, crate: ROCrate) -> ContextEntity:
             }
         ))
         parent_id_list.append(parent_info["doi_url"])
-    hubmap_org = crate.add(ContextEntity(
-        crate,
-        HUBMAP_ORG_ENTITY,
-        properties={
-            "@type": "Organization",
-            "name": "HuBMAP Consortium",
-            "url": HUBMAP_ORG_ENTITY
-        }
-    ))
+    hubmap_org = build_hubmap_org_entity(crate)
     agent = crate.add(SoftwareApplication(
         crate,
         "HuBMAP Process",
@@ -317,7 +351,7 @@ def main() -> None:
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
         logging.getLogger("api_calls").setLevel(logging.DEBUG)
         logging.getLogger("croissant_wrapper").setLevel(logging.DEBUG)
-    ds_info = fetch_entity_info(target_id)
+    ds_entity = WrappedEntity(fetch_entity_info(target_id))
 
     uuid_files = fetch_uuid_files_info(target_id)
     blk_idx = {}
@@ -336,19 +370,19 @@ def main() -> None:
 
     crate.metadata.extra_contexts.append("https://w3id.org/ro/terms/workflow-run/context")
 
-    wrapped_croissant = CroissantWrapper(target_id, ds_info["title"])
+    wrapped_croissant = CroissantWrapper(target_id, ds_entity["title"])
 
     crate.root_dataset["name"] = target_id
-    crate.root_dataset["description"] = ds_info["title"]
-    if "doi_url" in ds_info:
-        doi_url = ds_info["doi_url"]
+    crate.root_dataset["description"] = ds_entity["title"]
+    if "doi_url" in ds_entity:
+        doi_url = ds_entity["doi_url"]
         crate.root_dataset["identifier"] = doi_url
         crate.root_dataset["sameAs"] = doi_url
         wrapped_croissant.cite_as = doi_url
 
-    if "published_timestamp" in ds_info:
+    if "published_timestamp" in ds_entity:
         date_published = str(
-            datetime.fromtimestamp(ds_info["published_timestamp"] // 1000).astimezone(
+            datetime.fromtimestamp(ds_entity["published_timestamp"] // 1000).astimezone(
                 timezone.utc
             )
         )
@@ -361,36 +395,38 @@ def main() -> None:
 
     crate.root_dataset["funder"] = crate.add(build_funder_entity(crate))
 
-    ds_version = count_versions(ds_info)
+    ds_version = ds_entity.count_versions()
     crate.root_dataset["version"] = ds_version
     wrapped_croissant.version = ds_version
 
-    if contributors := ds_info.get("contributors"):
+    if contributors := ds_entity.get("contributors"):
         crate.add(build_pi_entity(crate))
         ent_l = build_contributors(crate, contributors)
         [crate.add(ent) for ent in ent_l]
         crate.root_dataset["contributor"] = ent_l
 
-    if is_processed(ds_info):
-        crate.add(build_derived_prov(ds_info, crate))
+    if ds_entity.is_processed:
+        crate.add(build_derived_prov(ds_entity, crate))
+    else:
+        crate.add(build_primary_prov(ds_entity, crate))
 
-    if "files" in ds_info:
+    if "files" in ds_entity:
         # This is a derived dataset- include only data products and qa_qc files
-        for fl in ds_info["files"]:
+        for fl in ds_entity["files"]:
             if fl["is_data_product"] or fl["is_qa_qc"] or include_all_files:
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
-                    asset_url(ds_info["uuid"], fl["rel_path"]),
+                    asset_url(ds_entity["uuid"], fl["rel_path"]),
                     validate_url=True
                 )
-                wrapped_croissant.add_file(ds_info["uuid"],
+                wrapped_croissant.add_file(ds_entity["uuid"],
                                            fl, blk_idx.get(fl["rel_path"]))
             else:
                 LOGGER.debug(f"{fl['rel_path']} is not a data product")
     else:
         for fl_blk in blk_idx.values():
             crate.add_file(
-                asset_url(ds_info["uuid"], fl_blk["path"]),
+                asset_url(ds_entity["uuid"], fl_blk["path"]),
                 validate_url=True
             )
             # We have no descriptive info for these files, so it's hard

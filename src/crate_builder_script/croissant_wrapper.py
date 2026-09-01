@@ -6,7 +6,7 @@ import mlcroissant as mlc
 
 from api_calls import fetch_entity_info, asset_url, HUBMAP
 
-from extractors import WrappedEntity, walk_ancestors, listify, is_processed, pipeline_steps
+from extractors import WrappedEntity
 
 LOGGER = logging.getLogger(__name__)
 

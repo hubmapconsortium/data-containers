@@ -108,6 +108,9 @@ class WrappedEntity:
     def __getitem__(self, key: Any) -> Any:
         return self._entity[key]
 
+    def __contains__(self, key: Any) -> bool:
+        return key in self._entity
+
     def walk_ancestors(
             self,
             continue_test: Callable[[dict], bool] = lambda ent: True
@@ -136,3 +139,12 @@ class WrappedEntity:
 
     def pipeline_steps(self) -> list[dict]:
         return pipeline_steps(self._entity)
+
+    def count_versions(self) -> int:
+        if "previous_revision_uuid" in self:
+            prev_ent = WrappedEntity(fetch_entity_info(self["previous_revision_uuid"]))
+            return (prev_ent.count_versions() + 1)
+        else:
+            return 1
+
+
