@@ -6,7 +6,7 @@ import mlcroissant as mlc
 
 from api_calls import fetch_entity_info, asset_url, HUBMAP
 
-from extractors import walk_ancestors, listify, is_processed
+from extractors import walk_ancestors, listify, is_processed, pipeline_steps
 
 LOGGER = logging.getLogger(__name__)
 
@@ -26,10 +26,6 @@ EDAM_INFO = {
 }
 
 
-def _own_dag(entity: dict) -> list:
-    return (entity.get("ingest_metadata") or {}).get("dag_provenance_list", [])
-
-
 def _protocol_dois(md: dict) -> list[str]:
     dois = []
     for k in ("preparation_protocol_doi", "reagent_prep_protocols_io_doi",
@@ -40,20 +36,6 @@ def _protocol_dois(md: dict) -> list[str]:
         dois.append(f"https://dx.doi.org/{v}" if v.startswith("10.") else v)
     return dois
 
-
-def _pipeline_steps(dag_list: list) -> list[dict]:
-    steps, seen = [], set()
-    for s in dag_list or []:
-        repo = (s.get("origin") or "").strip().replace(".git", "")
-        name = repo.rsplit("/", 1)[-1] if repo else (s.get("name") or "")
-        commit = (s.get("hash") or "")[:7]
-        cwl = s.get("name") or ""
-        key = (name, commit, cwl)
-        if not name or key in seen:
-            continue
-        seen.add(key)
-        steps.append({"name": name, "repo": repo, "commit": commit, "cwl": cwl})
-    return steps
 
 def _acquisition_activity(entity: dict, md: dict) -> dict:
     def agent(name, role=None, org=False):
@@ -114,9 +96,9 @@ def _specimen_chain(entity: dict, recur=0) -> dict:
     return derived
 
 
-def _pipeline_activity(dag_list: list) -> dict:
+def _pipeline_activity(entity: dict) -> dict:
     agents = []
-    for st in _pipeline_steps(dag_list):
+    for st in pipeline_steps(entity):
         a = {"@type": ["prov:SoftwareAgent", "schema:SoftwareApplication"],
              "schema:name": st["name"] + (f" [{st['cwl']}]" if st["cwl"] else ""),
              "schema:codeRepository": st["repo"], "hubmap:commit": st["commit"]}
@@ -152,7 +134,7 @@ def build_embedded_provenance(entity, md, descendants=None) -> dict:
             "prov:wasGeneratedBy": _acquisition_activity(raw_entity, raw_md or {}),
             "prov:wasDerivedFrom": _specimen_chain(raw_entity)
         }
-        return {"prov:wasGeneratedBy": _pipeline_activity(_own_dag(entity)),
+        return {"prov:wasGeneratedBy": _pipeline_activity(entity),
                 "prov:wasDerivedFrom": raw_node}
     provo = {"prov:wasGeneratedBy": _acquisition_activity(entity, md)}
     if chain := _specimen_chain(entity):
