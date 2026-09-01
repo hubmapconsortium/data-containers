@@ -35,10 +35,14 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_OUTPUT_PATH = "/tmp/crate_test"
 CROISSANT_FILENAME = "croissant.json"
 
+APACHE_ORG_ENTITY = "https://apache.org"
+
 # Externally defined identifiers
 NIH_URI = "https://ror.org/01cwqze88"
 ORCID_URI = "https://orcid.org"
 OBOLIB_URI = "http://purl.obolibrary.org/obo"
+
+AIRFLOW_VERSION = "2.11.0"
 
 ###############
 # Notes-
@@ -51,6 +55,9 @@ OBOLIB_URI = "http://purl.obolibrary.org/obo"
 # - Writing a croissant for a file in an unpublished dataset results in an error at
 #   validation time because the file block information from uuid-api has not yet been
 #   set so the sha256 code is not known.
+# - We need the Airflow version to write a valid provenance block, but
+#   AFAIK it is not maintained in the entity information. Likewise, some
+#   datasets were produced with python versions before 3.11.
 # - unpublished examples:
 #   TARGET_ID = "HBM567.VCBK.562"
 #   TARGET_ID = "HBM487.HJZB.546"  # primary dataset
@@ -220,7 +227,7 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
     prov_chain = ds_entity.walk_ancestors(lambda d: d["entity_type"] == "Dataset")
     assert len(prov_chain) == 1
     assert len(prov_chain[0]) == 3 
-    hubmap_id, parent_chain = prov_chain[0][0], prov_chain[0][2]
+    parent_chain = prov_chain[0][2]
     parent_id_list = []
     for tuple in parent_chain:
         parent_id, parent_info = tuple[0:2]
@@ -234,10 +241,24 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         ))
         parent_id_list.append(parent_info["doi_url"])
     hubmap_org = build_hubmap_org_entity(crate)
+    apache_org = crate.add(ContextEntity(
+        crate,
+        APACHE_ORG_ENTITY,
+        properties={
+            "@type": "Organization",
+            "name": "Apache Software Foundation",
+            "url": APACHE_ORG_ENTITY
+        }
+    ))
     agent = crate.add(SoftwareApplication(
         crate,
-        "HuBMAP Process",
-        properties={"parentOrganization": {"@id": hubmap_org.id}}
+        "Apache Airflow",
+        properties={
+            "version": AIRFLOW_VERSION,
+            "description": ("Apache Airflow - A platform to programmatically author,"
+                            " schedule, and monitor workflows"),
+            "publisher": {"@id": hubmap_org.id}
+        }
     ))
     python_lang = crate.add(ComputerLanguage(  # TODO this is surely wrong here
         crate,
