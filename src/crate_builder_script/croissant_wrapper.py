@@ -6,7 +6,7 @@ import mlcroissant as mlc
 
 from api_calls import fetch_entity_info, asset_url, HUBMAP
 
-from extractors import walk_ancestors, listify, is_processed, pipeline_steps
+from extractors import WrappedEntity, walk_ancestors, listify, is_processed, pipeline_steps
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def _protocol_dois(md: dict) -> list[str]:
     return dois
 
 
-def _acquisition_activity(entity: dict, md: dict) -> dict:
+def _acquisition_activity(entity: WrappedEntity, md: dict) -> dict:
     def agent(name, role=None, org=False):
         n = {"@type": "prov:Organization" if org else "prov:Person", "schema:name": name}
         if role:
@@ -69,7 +69,7 @@ def _acquisition_activity(entity: dict, md: dict) -> dict:
     return {k: v for k, v in act.items() if v not in (None, "", [])}
 
 
-def _specimen_chain(entity: dict, recur=0) -> dict:
+def _specimen_chain(entity: WrappedEntity) -> dict:
     def node(anc):
         n = {"@type": "prov:Entity", "@id": HUBMAP + (anc.get("hubmap_id") or ""),
              "schema:name": anc.get("hubmap_id"), "hubmap:entityType": anc.get("entity_type"),
@@ -81,8 +81,7 @@ def _specimen_chain(entity: dict, recur=0) -> dict:
             n["hubmap:dimensions"] = {"x": r.get("x_dimension"), "y": r.get("y_dimension"),
                                       "z": r.get("z_dimension"), "unit": r.get("dimension_units")}
         return {k: v for k, v in n.items() if v not in (None, "", [])}
-    ancs = listify(
-        walk_ancestors(entity),
+    ancs = entity.list_ancestors(
         omit_test=lambda dct: dct["entity_type"]=="Dataset"
     )
     order = {"section": 0, "block": 1, "organ": 2}
@@ -96,9 +95,9 @@ def _specimen_chain(entity: dict, recur=0) -> dict:
     return derived
 
 
-def _pipeline_activity(entity: dict) -> dict:
+def _pipeline_activity(entity: WrappedEntity) -> dict:
     agents = []
-    for st in pipeline_steps(entity):
+    for st in entity.pipeline_steps():
         a = {"@type": ["prov:SoftwareAgent", "schema:SoftwareApplication"],
              "schema:name": st["name"] + (f" [{st['cwl']}]" if st["cwl"] else ""),
              "schema:codeRepository": st["repo"], "hubmap:commit": st["commit"]}
@@ -109,23 +108,25 @@ def _pipeline_activity(entity: dict) -> dict:
     return act
 
 
-def build_embedded_provenance(entity, md, descendants=None) -> dict:
+def build_embedded_provenance(
+        entity: WrappedEntity,
+        md: dict | None,
+        descendants: list | None =None) -> dict:
     """
     PROCESSED subject: wasGeneratedBy its own pipeline; wasDerivedFrom the raw parent
     (which carries the acquisition activity + specimen chain). RAW subject: wasGeneratedBy
     acquisition; wasDerivedFrom specimen chain; + a light forward pointer to processed versions.
     """
-    if is_processed(entity):
+    if entity.is_processed:
         hubmap_id = entity["hubmap_id"]
-        ancestor_chain = walk_ancestors(
-            entity,
+        ancestor_chain = entity.walk_ancestors(
             lambda d: d["entity_type"] == "Dataset"
         )
         assert len(ancestor_chain) == 1, "internal error walking ancestors"
         check_id, ignored_entity, ancestors = ancestor_chain[0]
         assert check_id == hubmap_id
         assert len(ancestors) == 1, f"Dataset {hubmap_id} has too many ancestors"
-        raw_id, raw_entity, ignored = ancestors[0]
+        raw_entity = WrappedEntity(ancestors[0][1])
         raw_md = raw_entity.get("metadata")
         raw_node = {
             "@type": "prov:Entity", "@id": HUBMAP + (raw_entity.get("hubmap_id") or ""),
@@ -219,12 +220,12 @@ class CroissantWrapper():
                 "prov": "http://www.w3.org/ns/prov#",
                 "schema": "http://schema.org/"
             })
-        entity_dict = fetch_entity_info(self.name)
+        entity = WrappedEntity(fetch_entity_info(self.name))
         croissant_meta.update(
             build_embedded_provenance(
-                entity_dict,
-                md=entity_dict.get("metadata"), # md
-                descendants=entity_dict.get("direct_descendants", [])
+                entity,
+                md=entity.get("metadata"), # md
+                descendants=entity.get("direct_descendants", [])
             )
         )
         with open(croissant_filename, "w", encoding="utf-8") as f:
