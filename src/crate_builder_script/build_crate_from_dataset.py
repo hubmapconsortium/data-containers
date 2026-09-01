@@ -223,6 +223,22 @@ def build_primary_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
     return ContextEntity(crate, identifier=props["@id"], properties=props)
 
 
+def build_step_entity(step: dict, idx: int, crate: ROCrate) -> ContextEntity:
+    full_name = f"{step['name']}/{step['cwl']}"
+    pos = idx + 1
+    id_str = f"#step_{pos}"
+    print(f"STEP idx={idx} {full_name}:\n {pformat(step)}")
+    return crate.add(ContextEntity(
+        crate,
+        id_str,
+        properties={
+            "position": pos,
+            "@type": "HowToStep",
+            "name": full_name
+        }   
+    ))
+
+
 def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntity:
     prov_chain = ds_entity.walk_ancestors(lambda d: d["entity_type"] == "Dataset")
     assert len(prov_chain) == 1
@@ -265,16 +281,20 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         identifier="https://python.org",
         properties={"name": "Python", "version": "3.11", "url": "https://python.org"}
     ))
-    workflow_file = crate.add_file(
-        "https://github.com/hubmapconsortium/data-containers/blob/85441770eafe7da487b35d76112ec099d7b5b8f7/src/crate_builder_script/build_crate_from_dataset.py",
+    step_list = []
+    for idx, step in enumerate(ds_entity.pipeline_steps()):
+        step_list.append(build_step_entity(step, idx, crate))
+    workflow = crate.add(ContextEntity(
+        crate,
+        "#dag_steps",
         properties={
-            "@type": ["File", "SoftwareSourceCode", "ComputationalWorkflow"],
-            "name":"build_crate_from_dataset.py",
-            "description": "this should be the dag description. But how to reference CWLs?",
-            "programmingLanguage": {"@id": python_lang.id}
+            "@type": "ComputationalWorkflow",
+            "name":"dag_steps",
+            "description": "this should be the dag description",
+            "steps": step_list
         }
-    )
-    crate.mainEntity = workflow_file
+    ))
+    #crate.mainEntity = workflow
     props = {
         "@id": "#some_workflow",
         "@type": "CreateAction",
@@ -282,7 +302,7 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         "startTime": datetime.now().isoformat(),
         "endTime": datetime.now().isoformat(),
         "agent": {"@id": agent.id},
-        "instrument": {"@id": workflow_file.id},
+        "instrument": {"@id": workflow.id},
         "object": [{"@id": this_id} for this_id in parent_id_list],
         "result": [{"@id": "./"}],  # the target dataset
         "actionStatus": "CompletedActionStatus"
@@ -332,7 +352,8 @@ def build_profiles(crate: ROCrate) -> tuple:
             "version": "1.0"
         }
     ))
-    return (crate_profile, proc_profile, wf_profile, wfc_profile)
+    # return (crate_profile, proc_profile, wf_profile, wfc_profile)
+    return (crate_profile, proc_profile)
 
 
 def main() -> None:
