@@ -5,13 +5,9 @@ import os
 from collections import defaultdict
 from datetime import datetime, timezone
 from pprint import pformat, pprint
-from typing import Any, List
+from typing import List
 from tempfile import TemporaryDirectory
 
-# from rocrate.model.contextentity import ContextEntity
-# from rocrate.model.person import Person
-# from rocrate.model.dataset import Dataset
-# from rocrate.model.computerlanguage import ComputerLanguage
 from rocrate.model import (
     ContextEntity,
     Person,
@@ -21,7 +17,13 @@ from rocrate.model import (
 )
 from rocrate.rocrate import ROCrate
 
-import api_calls
+from api_calls import (
+    fetch_entity_info,
+    fetch_uuid_files_info,
+    asset_url,
+    HUBMAP_ORG_ENTITY
+)
+from extractors import walk_ancestors, is_processed
 from croissant_wrapper import CroissantWrapper
 
 logging.basicConfig(
@@ -162,7 +164,7 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
 def count_versions(ds_info: dict) -> int:
     if "previous_revision_uuid" in ds_info:
         return (
-            count_versions(api_calls.fetch_entity_info(ds_info["previous_revision_uuid"]))
+            count_versions(fetch_entity_info(ds_info["previous_revision_uuid"]))
             + 1
         )
     else:
@@ -170,7 +172,7 @@ def count_versions(ds_info: dict) -> int:
 
 
 def build_derived_prov(ds_info: dict, crate: ROCrate) -> ContextEntity:
-    prov_chain = api_calls.walk_ancestors(
+    prov_chain = walk_ancestors(
         ds_info,
         lambda d: d["entity_type"] == "Dataset"
     )
@@ -191,11 +193,11 @@ def build_derived_prov(ds_info: dict, crate: ROCrate) -> ContextEntity:
         parent_id_list.append(parent_info["doi_url"])
     hubmap_org = crate.add(ContextEntity(
         crate,
-        api_calls.HUBMAP_ORG_ENTITY,
+        HUBMAP_ORG_ENTITY,
         properties={
             "@type": "Organization",
             "name": "HuBMAP Consortium",
-            "url": api_calls.HUBMAP_ORG_ENTITY
+            "url": HUBMAP_ORG_ENTITY
         }
     ))
     agent = crate.add(SoftwareApplication(
@@ -315,9 +317,9 @@ def main() -> None:
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
         logging.getLogger("api_calls").setLevel(logging.DEBUG)
         logging.getLogger("croissant_wrapper").setLevel(logging.DEBUG)
-    ds_info = api_calls.fetch_entity_info(target_id)
+    ds_info = fetch_entity_info(target_id)
 
-    uuid_files = api_calls.fetch_uuid_files_info(target_id)
+    uuid_files = fetch_uuid_files_info(target_id)
     blk_idx = {}
     for file_blk in uuid_files:
         blk_idx[file_blk["path"]] = file_blk
@@ -369,7 +371,7 @@ def main() -> None:
         [crate.add(ent) for ent in ent_l]
         crate.root_dataset["contributor"] = ent_l
 
-    if api_calls.is_processed(ds_info):
+    if is_processed(ds_info):
         crate.add(build_derived_prov(ds_info, crate))
 
     if "files" in ds_info:
@@ -378,7 +380,7 @@ def main() -> None:
             if fl["is_data_product"] or fl["is_qa_qc"] or include_all_files:
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
-                    api_calls.asset_url(ds_info["uuid"], fl["rel_path"]),
+                    asset_url(ds_info["uuid"], fl["rel_path"]),
                     validate_url=True
                 )
                 wrapped_croissant.add_file(ds_info["uuid"],
@@ -388,7 +390,7 @@ def main() -> None:
     else:
         for fl_blk in blk_idx.values():
             crate.add_file(
-                api_calls.asset_url(ds_info["uuid"], fl_blk["path"]),
+                asset_url(ds_info["uuid"], fl_blk["path"]),
                 validate_url=True
             )
             # We have no descriptive info for these files, so it's hard

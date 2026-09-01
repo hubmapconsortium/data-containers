@@ -1,18 +1,12 @@
 import json
 import logging
-from os import walk
-from pprint import pformat, pprint
+from pprint import pformat
 
 import mlcroissant as mlc
 
-from api_calls import (
-    fetch_entity_info, 
-    walk_ancestors, 
-    listify, 
-    asset_url,
-    is_processed,
-    HUBMAP
-)
+from api_calls import fetch_entity_info, asset_url, HUBMAP
+
+from extractors import walk_ancestors, listify, is_processed
 
 LOGGER = logging.getLogger(__name__)
 
