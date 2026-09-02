@@ -58,6 +58,7 @@ AIRFLOW_VERSION = "2.11.0"
 # - We need the Airflow version to write a valid provenance block, but
 #   AFAIK it is not maintained in the entity information. Likewise, some
 #   datasets were produced with python versions before 3.11.
+# - the workflow_instance lacks start and end dates
 # - unpublished examples:
 #   TARGET_ID = "HBM567.VCBK.562"
 #   TARGET_ID = "HBM487.HJZB.546"  # primary dataset
@@ -223,18 +224,37 @@ def build_primary_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
     return ContextEntity(crate, identifier=props["@id"], properties=props)
 
 
-def build_step_entity(step: dict, idx: int, crate: ROCrate) -> ContextEntity:
-    full_name = f"{step['name']}/{step['cwl']}"
+def build_cwl_entity(crate: ROCrate) -> ContextEntity:
+    props = {
+        "@id": "https://w3id.org/workflowhub/workflow-ro-crate#cwl",
+        "@type": "ComputerLanguage",
+        "name": "Common Workflow Language",
+        "alternateName": "CWL",
+        "identifier": { "@id": "https://w3id.org/cwl/v1.2/" },
+        "url": "https://www.commonwl.org/"
+    }
+    return crate.add(ContextEntity(
+        crate, identifier=props["@id"], properties=props
+    ))
+
+
+def build_step_entity(step: dict, idx: int, cwl_entity: ContextEntity,
+                      crate: ROCrate) -> ContextEntity:
     pos = idx + 1
     id_str = f"#step_{pos}"
-    print(f"STEP idx={idx} {full_name}:\n {pformat(step)}")
+    hash = step["commit"]
     return crate.add(ContextEntity(
         crate,
         id_str,
         properties={
             "position": pos,
             "@type": "HowToStep",
-            "name": full_name
+            "name": step["cwl"],
+            "description": step["name"],
+            "version": hash,
+            "url": step["repo"],
+            "codeRepository": step["repo"],
+            "programmingLanguage": cwl_entity.id
         }   
     ))
 
@@ -266,14 +286,14 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
             "url": APACHE_ORG_ENTITY
         }
     ))
-    agent = crate.add(SoftwareApplication(
+    airflow = crate.add(SoftwareApplication(
         crate,
         "Apache Airflow",
         properties={
             "version": AIRFLOW_VERSION,
             "description": ("Apache Airflow - A platform to programmatically author,"
                             " schedule, and monitor workflows"),
-            "publisher": {"@id": hubmap_org.id}
+            "publisher": {"@id": apache_org.id}
         }
     ))
     python_lang = crate.add(ComputerLanguage(  # TODO this is surely wrong here
@@ -281,27 +301,40 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         identifier="https://python.org",
         properties={"name": "Python", "version": "3.11", "url": "https://python.org"}
     ))
-    step_list = []
-    for idx, step in enumerate(ds_entity.pipeline_steps()):
-        step_list.append(build_step_entity(step, idx, crate))
+    cwl_entity = build_cwl_entity(crate)
+    all_steps = ds_entity.pipeline_steps()
+    assert all_steps[0]["name"] == "ingest-pipeline" and not all_steps[0]["cwl"]
+    ingest_pipeline_info = all_steps[0]
+    hash = ingest_pipeline_info["commit"]
+    cwl_steps = all_steps[1:]
+    assert all(step["cwl"] for step in cwl_steps), "Found a step which is not CWL?"
+    step_list = [build_step_entity(step, idx, cwl_entity, crate)
+                 for idx, step in enumerate(cwl_steps)]
     workflow = crate.add(ContextEntity(
         crate,
-        "#dag_steps",
+        "#workflow",
         properties={
-            "@type": "ComputationalWorkflow",
-            "name":"dag_steps",
-            "description": "this should be the dag description",
-            "steps": step_list
+            "@type": ["ComputationalWorkflow", "SoftwareApplication"],
+            "name":"ingest-pipeline dag workflow",
+            "description": "Processing steps implemeneted by an ingest-pipeline DAG",
+            "steps": step_list,
+            "version": hash,
+            "url": ingest_pipeline_info["repo"],
+            "codeRepository": ingest_pipeline_info["repo"],
+            "downloadUrl": f"{ingest_pipeline_info['repo']}/archive/{hash}.zip",
+            "publisher": {"@id": hubmap_org.id},
+            "programmingLanguage": {"@id": python_lang.id},
+            "softwareRequirements": {"@id": airflow.id}
         }
     ))
     #crate.mainEntity = workflow
     props = {
-        "@id": "#some_workflow",
+        "@id": "#workflow_instance",
         "@type": "CreateAction",
         "name": "the-create-action",
-        "startTime": datetime.now().isoformat(),
+        "startTime": datetime.now().isoformat(),  # TODO: do I have these values?
         "endTime": datetime.now().isoformat(),
-        "agent": {"@id": agent.id},
+        "agent": {"@id": workflow.id},
         "instrument": {"@id": workflow.id},
         "object": [{"@id": this_id} for this_id in parent_id_list],
         "result": [{"@id": "./"}],  # the target dataset
