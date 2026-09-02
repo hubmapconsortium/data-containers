@@ -43,6 +43,7 @@ ORCID_URI = "https://orcid.org"
 OBOLIB_URI = "http://purl.obolibrary.org/obo"
 
 AIRFLOW_VERSION = "2.11.0"
+CWL_VERSION = "v1.1"
 
 ###############
 # Notes-
@@ -57,7 +58,9 @@ AIRFLOW_VERSION = "2.11.0"
 #   set so the sha256 code is not known.
 # - We need the Airflow version to write a valid provenance block, but
 #   AFAIK it is not maintained in the entity information. Likewise, some
-#   datasets were produced with python versions before 3.11.
+#   datasets were produced with python versions before 3.11.  Likewise, I've
+#   hard-coded the CWL version, but ours is actually modified- the CWL language
+#   definition entity should point at ours rather than at default CWL.
 # - the workflow_instance lacks start and end dates
 # - unpublished examples:
 #   TARGET_ID = "HBM567.VCBK.562"
@@ -230,7 +233,7 @@ def build_cwl_entity(crate: ROCrate) -> ContextEntity:
         "@type": "ComputerLanguage",
         "name": "Common Workflow Language",
         "alternateName": "CWL",
-        "identifier": { "@id": "https://w3id.org/cwl/v1.2/" },
+        "identifier": { "@id": f"https://w3id.org/cwl/{CWL_VERSION}/" },
         "url": "https://www.commonwl.org/"
     }
     return crate.add(ContextEntity(
