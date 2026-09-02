@@ -309,6 +309,10 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
     assert all_steps[0]["name"] == "ingest-pipeline" and not all_steps[0]["cwl"]
     ingest_pipeline_info = all_steps[0]
     hash = ingest_pipeline_info["commit"]
+    desc = (ds_entity["ingest_metadata"]["workflow_description"]
+            if "ingest_metadata" in ds_entity
+            and "workflow_description" in ds_entity["ingest_metadata"]
+            else "Processing steps implemeneted by an ingest-pipeline DAG")
     cwl_steps = all_steps[1:]
     assert all(step["cwl"] for step in cwl_steps), "Found a step which is not CWL?"
     step_list = [build_step_entity(step, idx, cwl_entity, crate)
@@ -319,7 +323,7 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         properties={
             "@type": ["ComputationalWorkflow", "SoftwareApplication"],
             "name":"ingest-pipeline dag workflow",
-            "description": "Processing steps implemeneted by an ingest-pipeline DAG",
+            "description": desc,
             "steps": step_list,
             "version": hash,
             "url": ingest_pipeline_info["repo"],
