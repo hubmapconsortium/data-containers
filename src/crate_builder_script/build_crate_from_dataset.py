@@ -8,12 +8,21 @@ from pprint import pformat, pprint
 from tempfile import TemporaryDirectory
 from typing import List
 
-from api_calls import (HUBMAP_ORG_ENTITY, asset_url, fetch_entity_info,
-                       fetch_uuid_files_info)
+from api_calls import (
+    HUBMAP_ORG_ENTITY,
+    asset_url,
+    fetch_entity_info,
+    fetch_uuid_files_info,
+)
 from croissant_wrapper import CroissantWrapper
 from extractors import WrappedEntity
-from rocrate.model import (ComputerLanguage, ContextEntity, Dataset, Person,
-                           SoftwareApplication)
+from rocrate.model import (
+    ComputerLanguage,
+    ContextEntity,
+    Dataset,
+    Person,
+    SoftwareApplication,
+)
 from rocrate.rocrate import ROCrate
 
 logging.basicConfig(
