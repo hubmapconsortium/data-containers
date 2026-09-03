@@ -58,6 +58,7 @@ CWL_VERSION = "v1.1"
 # - published examples:
 #   TARGET_ID = "HBM866.VMBK.952"
 #   TARGET_ID = "HBM473.QLDT.264"  # primary dataset
+#   TARGET_ID = "HBM748.CHWC.963"  # derived from snare-seq
 ###############
 
 
@@ -314,7 +315,7 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         ds_entity["ingest_metadata"]["workflow_description"]
         if "ingest_metadata" in ds_entity
         and "workflow_description" in ds_entity["ingest_metadata"]
-        else "Processing steps implemeneted by an ingest-pipeline DAG"
+        else "Processing steps implemented by an ingest-pipeline DAG"
     )
     cwl_steps = all_steps[1:]
     assert all(step["cwl"] for step in cwl_steps), "Found a step which is not CWL?"
