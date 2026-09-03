@@ -1,3 +1,5 @@
+"""Define utilities to extract relevant subsets of entity data."""
+
 import logging
 from collections.abc import Callable
 from pprint import pformat
@@ -12,6 +14,8 @@ def walk_ancestors(
     entity: dict, continue_test: Callable[[dict], bool] = lambda ent: True
 ) -> list[tuple]:
     """
+    Extract the chain of ancestors for a dataset.
+
     Given an entity dictionary, return a list of tuples.  Each tuple has
     the form:
     (hubmap_id entity_dict list-of-ancestors)
@@ -63,6 +67,7 @@ def walk_ancestors(
 
 
 def listify(ancestor_chain: list, omit_test: Callable[[dict], bool]) -> list:
+    """Transform the output of walk_ancestors() to a list."""
     assert len(ancestor_chain) == 1, "listify must start on a 1-tuple chain"
     hubmap_id, entity_dict, ancestors = ancestor_chain[0]
     rslt = []
@@ -75,7 +80,11 @@ def listify(ancestor_chain: list, omit_test: Callable[[dict], bool]) -> list:
 
 
 def is_processed(entity: dict) -> bool:
-    """Raw vs processed: `creation_action` is 'Create Dataset Activity' vs 'Central Process'."""
+    """
+    Distinguished processed datasets from raw (primary) datasets.
+
+    Raw vs processed: `creation_action` is 'Create Dataset Activity' vs 'Central Process'.
+    """
     return "process" in (entity.get("creation_action") or "").lower()
 
 
@@ -84,6 +93,7 @@ def _own_dag(entity: dict) -> list:
 
 
 def pipeline_steps(entity: dict) -> list[dict]:
+    """Return a list of dicts describing the steps by which a derived dataset is created."""
     dag_list = _own_dag(entity)
     steps, seen = [], set()
     for s in dag_list or []:
@@ -100,22 +110,30 @@ def pipeline_steps(entity: dict) -> list[dict]:
 
 
 class WrappedEntity:
+    """Provide a convenient wrapper for entity information."""
+
     def __init__(self, entity: dict):
+        """Construct a WrappedEntity."""
         self._entity = entity
 
     def get(self, key: Any, default=None) -> Any:
+        """Pass references to the get method to the internal dict."""
         return self._entity.get(key, default)
 
     def __getitem__(self, key: Any) -> Any:
+        """Implement square brackets for the wrapper class."""
         return self._entity[key]
 
     def __contains__(self, key: Any) -> bool:
+        """Implement 'in' for the wrapper class."""
         return key in self._entity
 
     def walk_ancestors(
         self, continue_test: Callable[[dict], bool] = lambda ent: True
     ) -> list[tuple]:
         """
+        Walk the ancestors of the entity.
+
         Return a list of tuples of the form:
         (hubmap_id entity_dict list-of-ancestors)
         where list-of-ancestors is None or a list of tuples of the same form.
@@ -130,18 +148,20 @@ class WrappedEntity:
         continue_test: Callable[[dict], bool] = lambda ent: True,
         omit_test: Callable[[dict], bool] = lambda end: False,
     ) -> list:
-        """Returns ancestor information in an expanded, non-recursive list"""
+        """Return ancestor information in an expanded, non-recursive list."""
         return listify(self.walk_ancestors(continue_test), omit_test)
 
     @property
     def is_processed(self):
-        """Is this a processed dataset, as opposed to a raw (primary) dataset?"""
+        """True if this a processed dataset, as opposed to a raw (primary) dataset."""
         return is_processed(self._entity)
 
     def pipeline_steps(self) -> list[dict]:
+        """Return the pipeline steps of the wrapped entity."""
         return pipeline_steps(self._entity)
 
     def count_versions(self) -> int:
+        """Return a version number for the wrapped entity."""
         if "previous_revision_uuid" in self:
             prev_ent = WrappedEntity(fetch_entity_info(self["previous_revision_uuid"]))
             return prev_ent.count_versions() + 1

@@ -1,3 +1,4 @@
+"""Provides functions to build the Croissant file."""
 import json
 import logging
 from pprint import pformat
@@ -146,6 +147,8 @@ def build_embedded_provenance(
     entity: WrappedEntity, md: dict | None, descendants: list | None = None
 ) -> dict:
     """
+    Build embedded provenance for the given entity.
+
     PROCESSED subject: wasGeneratedBy its own pipeline; wasDerivedFrom the raw parent
     (which carries the acquisition activity + specimen chain). RAW subject: wasGeneratedBy
     acquisition; wasDerivedFrom specimen chain; + a light forward pointer to processed versions.
@@ -188,8 +191,11 @@ def build_embedded_provenance(
 
 
 class CroissantWrapper:
+    """Wraps Croissant generation functionality."""
+
     @classmethod
     def test(cls, entity_dict: dict) -> None:
+        """Provide a test of utility methods."""
         LOGGER.info(
             "Testing CroissantWrapper:\n%s",
             pformat(
@@ -202,6 +208,7 @@ class CroissantWrapper:
         )
 
     def __init__(self, name: str, description: str):
+        """Construct a CroissantWrapper instance."""
         self.name = name
         self.description = description
         self.file_objects = []
@@ -212,6 +219,7 @@ class CroissantWrapper:
         self.version = None
 
     def add_file(self, ds_uuid: str, file_info: dict, file_blk: dict | None) -> None:
+        """Define and describe a single file in the dataset."""
         args = {
             "id": file_info["rel_path"],
             "name": file_info["rel_path"],
@@ -225,7 +233,7 @@ class CroissantWrapper:
                 LOGGER.warning(f"Unknown EDAM format {edam} for {pformat(file_info)}")
                 args["encoding_formats"] = ["application/octet-stream"]
         else:
-            args[encoding_formats] = ["application/octet-stream"]
+            args["encoding_formats"] = ["application/octet-stream"]
         if file_blk:
             args["sha256"] = file_blk["sha256_checksum"]
         self.file_objects.append(mlc.FileObject(**args))
@@ -234,6 +242,7 @@ class CroissantWrapper:
     #     self.record_sets.append(record_set)
 
     def write(self, croissant_filename: str):
+        """Write the Croissant file."""
         args = {
             "id": "croissant-spec",
             "name": self.name,

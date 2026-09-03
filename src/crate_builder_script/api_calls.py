@@ -1,3 +1,4 @@
+"""Handle requests to HuBMAP APIs."""
 import logging
 import os
 from pprint import pformat
@@ -19,6 +20,7 @@ HUBMAP_ORG_ENTITY = HUBMAP  # for lack of a better choice
 
 
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
+    """Fetch a dataset's entity information."""
     resp = requests.get(
         ENTITY_API + f"/entities/{target_id}",
         headers={"Authorization": f"Bearer {AUTH_TOK}"},
@@ -50,6 +52,7 @@ def fetch_entity_info(target_id: str) -> dict[str, Any]:
 
 
 def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
+    """Fetch files informaion from the UUID API."""
     resp = requests.get(
         UUID_API + f"/{target_id}/files",
         headers={"Authorization": f"Bearer {AUTH_TOK}"},
@@ -60,4 +63,5 @@ def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
 
 
 def asset_url(uuid: str, rel_path: str) -> str:
+    """Build the URL by which a file should be available from the ASSETS API."""
     return f"{ASSETS_API}/{uuid}/{rel_path}"

@@ -1,28 +1,19 @@
+"""Build an RO-Crate and a Croissant for a dataset."""
 import argparse
-import json
 import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-from pprint import pformat, pprint
+# from pprint import pformat, pprint
 from tempfile import TemporaryDirectory
 from typing import List
 
-from api_calls import (
-    HUBMAP_ORG_ENTITY,
-    asset_url,
-    fetch_entity_info,
-    fetch_uuid_files_info,
-)
+from api_calls import (HUBMAP_ORG_ENTITY, asset_url, fetch_entity_info,
+                       fetch_uuid_files_info)
 from croissant_wrapper import CroissantWrapper
 from extractors import WrappedEntity
-from rocrate.model import (
-    ComputerLanguage,
-    ContextEntity,
-    Dataset,
-    Person,
-    SoftwareApplication,
-)
+from rocrate.model import (ComputerLanguage, ContextEntity, Dataset, Person,
+                           SoftwareApplication)
 from rocrate.rocrate import ROCrate
 
 logging.basicConfig(
@@ -72,6 +63,7 @@ CWL_VERSION = "v1.1"
 
 
 def build_funder_entity(crate: ROCrate) -> ContextEntity:
+    """Build an entity representing the NIH."""
     funder_props = {
         "@id": NIH_URI,
         "@type": "Organization",
@@ -82,6 +74,7 @@ def build_funder_entity(crate: ROCrate) -> ContextEntity:
 
 
 def build_license_entity(crate: ROCrate) -> ContextEntity:
+    """Build an entity representing the Creative Commons license."""
     license_props = {
         "@type": "CreativeWork",
         "name": "Creative Commons Atribution 4.0 International",
@@ -99,6 +92,7 @@ def build_license_entity(crate: ROCrate) -> ContextEntity:
 
 
 def build_pi_entity(crate: ROCrate) -> ContextEntity:
+    """Build an entity representing the Principal Investigator role."""
     props = {
         "@id": "#role-principal-investigator",
         "@type": "Role",
@@ -110,6 +104,7 @@ def build_pi_entity(crate: ROCrate) -> ContextEntity:
 
 
 def build_contact_entity(crate: ROCrate) -> ContextEntity:
+    """Build an entity representing the contact person for the dataset."""
     props = {
         "@id": "#role-contact",
         "@type": "Role",
@@ -126,6 +121,7 @@ def build_contact_entity(crate: ROCrate) -> ContextEntity:
 
 
 def build_ia_entity(crate: ROCrate) -> ContextEntity:
+    """Build an entity representing the operator for a dataset."""
     props = {
         "@id": "#role-investigative-agent",
         "@type": "Role",
@@ -143,6 +139,7 @@ def build_ia_entity(crate: ROCrate) -> ContextEntity:
 
 
 def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[ContextEntity]:
+    """Construct a representation of contributors information."""
     ent_l = []
     role_d = {}
     role_list_d = defaultdict(list)
@@ -173,6 +170,7 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
 
 
 def build_hubmap_org_entity(crate: ROCrate) -> ContextEntity:
+    """Build an entity representing the HuBMAP organization."""
     hubmap_org = crate.add(
         ContextEntity(
             crate,
@@ -188,9 +186,7 @@ def build_hubmap_org_entity(crate: ROCrate) -> ContextEntity:
 
 
 def build_primary_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntity:
-    """
-    This is largely a dummy routine for now.
-    """
+    """Construct minimal dummy provenance."""
     hubmap_org = build_hubmap_org_entity(crate)
     agent = crate.add(
         SoftwareApplication(
@@ -224,6 +220,7 @@ def build_primary_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
 
 
 def build_cwl_entity(crate: ROCrate) -> ContextEntity:
+    """Build an entity representing the CWL language."""
     props = {
         "@id": "https://w3id.org/workflowhub/workflow-ro-crate#cwl",
         "@type": "ComputerLanguage",
@@ -238,6 +235,7 @@ def build_cwl_entity(crate: ROCrate) -> ContextEntity:
 def build_step_entity(
     step: dict, idx: int, cwl_entity: ContextEntity, crate: ROCrate
 ) -> ContextEntity:
+    """Build an entity representing one step of the provenance chain."""
     pos = idx + 1
     id_str = f"#step_{pos}"
     hash = step["commit"]
@@ -260,6 +258,7 @@ def build_step_entity(
 
 
 def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntity:
+    """Build a set of entities representing the provenance by which a derived dataset is produced from one or more primary datasets."""
     prov_chain = ds_entity.walk_ancestors(lambda d: d["entity_type"] == "Dataset")
     assert len(prov_chain) == 1
     assert len(prov_chain[0]) == 3
@@ -365,9 +364,7 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
 
 
 def build_profiles(crate: ROCrate) -> tuple:
-    """
-    Build ContextElements for several profiles needed to describe a workflow.
-    """
+    """Build ContextElements for several profiles needed to describe a workflow."""
     base_crate_ctx_id = f"https://w3id.org/ro/crate/{crate.version}"
     crate_profile = crate.add(
         ContextEntity(
@@ -417,6 +414,7 @@ def build_profiles(crate: ROCrate) -> tuple:
 
 
 def main() -> None:
+    """Parse command line and carry out construction of the RO-Crate and Croissant files."""
     parser = argparse.ArgumentParser()
     parser.add_argument("target_id", help="Build an RO-Crate for this dataset")
     parser.add_argument(
