@@ -187,39 +187,29 @@ def build_hubmap_org_entity(crate: ROCrate) -> ContextEntity:
 
 def build_primary_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntity:
     """
-    This is a dummy routine for now.  It needs enough structure to define
-    crate.mainEntity.
+    This is largely a dummy routine for now.
     """
-
     hubmap_org = build_hubmap_org_entity(crate)
     agent = crate.add(SoftwareApplication(
         crate,
         "HuBMAP Process",
         properties={"parentOrganization": {"@id": hubmap_org.id}}
     ))
-    python_lang = crate.add(ComputerLanguage(  # TODO this is surely wrong here
+    instrument_model = ds_entity["metadata"].get("acquisition_instrument_model", "")
+    instrument_entity = crate.add(ContextEntity(
         crate,
-        identifier="https://python.org",
-        properties={"name": "Python", "version": "3.11", "url": "https://python.org"}
-    ))
-    workflow_file = crate.add_file(
-        "https://github.com/hubmapconsortium/data-containers/blob/85441770eafe7da487b35d76112ec099d7b5b8f7/src/crate_builder_script/build_crate_from_dataset.py",
+        "#instrument",
         properties={
-            "@type": ["File", "SoftwareSourceCode", "ComputationalWorkflow"],
-            "name":"build_crate_from_dataset.py",
-            "description": "this should be the dag description. But how to reference CWLs?",
-            "programmingLanguage": {"@id": python_lang.id}
+            "@type": ["IndividualProduct", "ComputationalWorkflow"],
+            "name": instrument_model,
         }
-    )
-    crate.mainEntity = workflow_file
+    ))
     props = {
         "@id": "#some_workflow",
         "@type": "CreateAction",
         "name": "the-create-action",
-        "startTime": datetime.now().isoformat(),
-        "endTime": datetime.now().isoformat(),
         "agent": {"@id": agent.id},
-        "instrument": {"@id": workflow_file.id},
+        "instrument": {"@id": instrument_entity.id},
         "object": [],
         "result": [{"@id": "./"}],  # the target dataset
         "actionStatus": "CompletedActionStatus"
@@ -334,13 +324,10 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
             "softwareRequirements": {"@id": airflow.id}
         }
     ))
-    #crate.mainEntity = workflow
     props = {
         "@id": "#workflow_instance",
         "@type": "CreateAction",
         "name": "the-create-action",
-        "startTime": datetime.now().isoformat(),  # TODO: do I have these values?
-        "endTime": datetime.now().isoformat(),
         "agent": {"@id": workflow.id},
         "instrument": {"@id": workflow.id},
         "object": [{"@id": this_id} for this_id in parent_id_list],
@@ -373,25 +360,27 @@ def build_profiles(crate: ROCrate) -> tuple:
             "version": "0.5"
         }
     ))
-    wf_profile = crate.add(ContextEntity(
-        crate,
-        "https://w3id.org/ro/wfrun/workflow/0.5",
-        properties={
-            "@type": ["CreativeWork", "Profile"],
-            "name": "Workflow Run Crate Profile",
-            "version": "0.5",
-            # "isProfileOf": {"@id": proc_profile.id}
-        }
-    ))
-    wfc_profile = crate.add(ContextEntity(
-        crate,
-        "https://w3id.org/workflowhub/workflow-ro-crate/1.0",
-        properties={
-            "@type": ["CreativeWork", "Profile"],
-            "name": "Workflow Run RO-Crate",
-            "version": "1.0"
-        }
-    ))
+    #    # These two profiles are needed for full software workflows
+    #
+    # wf_profile = crate.add(ContextEntity(
+    #     crate,
+    #     "https://w3id.org/ro/wfrun/workflow/0.5",
+    #     properties={
+    #         "@type": ["CreativeWork", "Profile"],
+    #         "name": "Workflow Run Crate Profile",
+    #         "version": "0.5",
+    #         # "isProfileOf": {"@id": proc_profile.id}
+    #     }
+    # ))
+    # wfc_profile = crate.add(ContextEntity(
+    #     crate,
+    #     "https://w3id.org/workflowhub/workflow-ro-crate/1.0",
+    #     properties={
+    #         "@type": ["CreativeWork", "Profile"],
+    #         "name": "Workflow Run RO-Crate",
+    #         "version": "1.0"
+    #     }
+    # ))
     # return (crate_profile, proc_profile, wf_profile, wfc_profile)
     return (crate_profile, proc_profile)
 
@@ -529,7 +518,7 @@ def main() -> None:
             "url": "https://docs.mlcommons.org/croissant/docs/crossant-spec-1.0.html"
         }
     ))
-    croissant_crate_file = crate.add_file(
+    crate.add_file(
         os.path.join(tmpdir.name, CROISSANT_FILENAME),
         properties={
             "name": "Croissant Metadata Descriptor",
