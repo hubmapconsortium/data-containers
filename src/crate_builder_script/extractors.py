@@ -1,16 +1,16 @@
 import logging
-from pprint import pformat
 from collections.abc import Callable
+from pprint import pformat
 from typing import Any
 
 from api_calls import fetch_entity_info
 
 LOGGER = logging.getLogger(__name__)
 
+
 def walk_ancestors(
-        entity: dict,
-        continue_test: Callable[[dict], bool] = lambda ent: True
-    ) -> list[tuple]:
+    entity: dict, continue_test: Callable[[dict], bool] = lambda ent: True
+) -> list[tuple]:
     """
     Given an entity dictionary, return a list of tuples.  Each tuple has
     the form:
@@ -27,8 +27,10 @@ def walk_ancestors(
     e_id = entity.get("hubmap_id")
     LOGGER.debug(f"walk_ancestors {e_id} {e_type}")
     if e_type == "Dataset":
-        ancs = [walk_ancestors(anc, continue_test)
-                for anc in entity.get("direct_ancestors", [])]
+        ancs = [
+            walk_ancestors(anc, continue_test)
+            for anc in entity.get("direct_ancestors", [])
+        ]
         if ancs:
             all_tuples = []
             for sub_list in ancs:
@@ -48,8 +50,7 @@ def walk_ancestors(
         if "direct_ancestor" not in entity:
             LOGGER.debug(f"walk_ancestors fetching dead-end sample {e_id}")
             entity = fetch_entity_info(e_id)
-            LOGGER.debug("walk_ancestors fetch yielded:\n%s",
-                         pformat(entity, depth=2))
+            LOGGER.debug("walk_ancestors fetch yielded:\n%s", pformat(entity, depth=2))
             LOGGER.debug("walk_ancestors end of walk jump result")
         new_entity = entity.get("direct_ancestor", {})
         if e_type == "Donor":
@@ -112,9 +113,8 @@ class WrappedEntity:
         return key in self._entity
 
     def walk_ancestors(
-            self,
-            continue_test: Callable[[dict], bool] = lambda ent: True
-        ) -> list[tuple]:
+        self, continue_test: Callable[[dict], bool] = lambda ent: True
+    ) -> list[tuple]:
         """
         Return a list of tuples of the form:
         (hubmap_id entity_dict list-of-ancestors)
@@ -125,10 +125,11 @@ class WrappedEntity:
         """
         return walk_ancestors(self._entity, continue_test)
 
-    def list_ancestors(self,
-                    continue_test: Callable[[dict], bool] = lambda ent: True,
-                    omit_test: Callable[[dict], bool] = lambda end: False
-                    ) -> list:
+    def list_ancestors(
+        self,
+        continue_test: Callable[[dict], bool] = lambda ent: True,
+        omit_test: Callable[[dict], bool] = lambda end: False,
+    ) -> list:
         """Returns ancestor information in an expanded, non-recursive list"""
         return listify(self.walk_ancestors(continue_test), omit_test)
 
@@ -143,8 +144,6 @@ class WrappedEntity:
     def count_versions(self) -> int:
         if "previous_revision_uuid" in self:
             prev_ent = WrappedEntity(fetch_entity_info(self["previous_revision_uuid"]))
-            return (prev_ent.count_versions() + 1)
+            return prev_ent.count_versions() + 1
         else:
             return 1
-
-

@@ -5,26 +5,16 @@ import os
 from collections import defaultdict
 from datetime import datetime, timezone
 from pprint import pformat, pprint
-from typing import List
 from tempfile import TemporaryDirectory
+from typing import List
 
-from rocrate.model import (
-    ContextEntity,
-    Person,
-    Dataset,
-    ComputerLanguage,
-    SoftwareApplication
-)
-from rocrate.rocrate import ROCrate
-
-from api_calls import (
-    fetch_entity_info,
-    fetch_uuid_files_info,
-    asset_url,
-    HUBMAP_ORG_ENTITY
-)
-from extractors import WrappedEntity
+from api_calls import (HUBMAP_ORG_ENTITY, asset_url, fetch_entity_info,
+                       fetch_uuid_files_info)
 from croissant_wrapper import CroissantWrapper
+from extractors import WrappedEntity
+from rocrate.model import (ComputerLanguage, ContextEntity, Dataset, Person,
+                           SoftwareApplication)
+from rocrate.rocrate import ROCrate
 
 logging.basicConfig(
     level=logging.INFO,
@@ -173,15 +163,17 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
 
 
 def build_hubmap_org_entity(crate: ROCrate) -> ContextEntity:
-    hubmap_org = crate.add(ContextEntity(
-        crate,
-        HUBMAP_ORG_ENTITY,
-        properties={
-            "@type": "Organization",
-            "name": "HuBMAP Consortium",
-            "url": HUBMAP_ORG_ENTITY
-        }
-    ))
+    hubmap_org = crate.add(
+        ContextEntity(
+            crate,
+            HUBMAP_ORG_ENTITY,
+            properties={
+                "@type": "Organization",
+                "name": "HuBMAP Consortium",
+                "url": HUBMAP_ORG_ENTITY,
+            },
+        )
+    )
     return hubmap_org
 
 
@@ -190,20 +182,24 @@ def build_primary_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
     This is largely a dummy routine for now.
     """
     hubmap_org = build_hubmap_org_entity(crate)
-    agent = crate.add(SoftwareApplication(
-        crate,
-        "HuBMAP Process",
-        properties={"parentOrganization": {"@id": hubmap_org.id}}
-    ))
+    agent = crate.add(
+        SoftwareApplication(
+            crate,
+            "HuBMAP Process",
+            properties={"parentOrganization": {"@id": hubmap_org.id}},
+        )
+    )
     instrument_model = ds_entity["metadata"].get("acquisition_instrument_model", "")
-    instrument_entity = crate.add(ContextEntity(
-        crate,
-        "#instrument",
-        properties={
-            "@type": ["IndividualProduct", "ComputationalWorkflow"],
-            "name": instrument_model,
-        }
-    ))
+    instrument_entity = crate.add(
+        ContextEntity(
+            crate,
+            "#instrument",
+            properties={
+                "@type": ["IndividualProduct", "ComputationalWorkflow"],
+                "name": instrument_model,
+            },
+        )
+    )
     props = {
         "@id": "#some_workflow",
         "@type": "CreateAction",
@@ -212,7 +208,7 @@ def build_primary_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         "instrument": {"@id": instrument_entity.id},
         "object": [],
         "result": [{"@id": "./"}],  # the target dataset
-        "actionStatus": "CompletedActionStatus"
+        "actionStatus": "CompletedActionStatus",
     }
     return ContextEntity(crate, identifier=props["@id"], properties=props)
 
@@ -223,107 +219,128 @@ def build_cwl_entity(crate: ROCrate) -> ContextEntity:
         "@type": "ComputerLanguage",
         "name": "Common Workflow Language",
         "alternateName": "CWL",
-        "identifier": { "@id": f"https://w3id.org/cwl/{CWL_VERSION}/" },
-        "url": "https://www.commonwl.org/"
+        "identifier": {"@id": f"https://w3id.org/cwl/{CWL_VERSION}/"},
+        "url": "https://www.commonwl.org/",
     }
-    return crate.add(ContextEntity(
-        crate, identifier=props["@id"], properties=props
-    ))
+    return crate.add(ContextEntity(crate, identifier=props["@id"], properties=props))
 
 
-def build_step_entity(step: dict, idx: int, cwl_entity: ContextEntity,
-                      crate: ROCrate) -> ContextEntity:
+def build_step_entity(
+    step: dict, idx: int, cwl_entity: ContextEntity, crate: ROCrate
+) -> ContextEntity:
     pos = idx + 1
     id_str = f"#step_{pos}"
     hash = step["commit"]
-    return crate.add(ContextEntity(
-        crate,
-        id_str,
-        properties={
-            "position": pos,
-            "@type": "HowToStep",
-            "name": step["cwl"],
-            "description": step["name"],
-            "version": hash,
-            "url": step["repo"],
-            "codeRepository": step["repo"],
-            "programmingLanguage": cwl_entity.id
-        }   
-    ))
+    return crate.add(
+        ContextEntity(
+            crate,
+            id_str,
+            properties={
+                "position": pos,
+                "@type": "HowToStep",
+                "name": step["cwl"],
+                "description": step["name"],
+                "version": hash,
+                "url": step["repo"],
+                "codeRepository": step["repo"],
+                "programmingLanguage": cwl_entity.id,
+            },
+        )
+    )
 
 
 def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntity:
     prov_chain = ds_entity.walk_ancestors(lambda d: d["entity_type"] == "Dataset")
     assert len(prov_chain) == 1
-    assert len(prov_chain[0]) == 3 
+    assert len(prov_chain[0]) == 3
     parent_chain = prov_chain[0][2]
     parent_id_list = []
     for tuple in parent_chain:
         parent_id, parent_info = tuple[0:2]
-        crate.add(Dataset(
-            crate,
-            parent_info["doi_url"],
-            properties={
-                "name": parent_id,
-                "description": parent_info["description"]
-            }
-        ))
+        crate.add(
+            Dataset(
+                crate,
+                parent_info["doi_url"],
+                properties={
+                    "name": parent_id,
+                    "description": parent_info["description"],
+                },
+            )
+        )
         parent_id_list.append(parent_info["doi_url"])
     hubmap_org = build_hubmap_org_entity(crate)
-    apache_org = crate.add(ContextEntity(
-        crate,
-        APACHE_ORG_ENTITY,
-        properties={
-            "@type": "Organization",
-            "name": "Apache Software Foundation",
-            "url": APACHE_ORG_ENTITY
-        }
-    ))
-    airflow = crate.add(SoftwareApplication(
-        crate,
-        "Apache Airflow",
-        properties={
-            "version": AIRFLOW_VERSION,
-            "description": ("Apache Airflow - A platform to programmatically author,"
-                            " schedule, and monitor workflows"),
-            "publisher": {"@id": apache_org.id}
-        }
-    ))
-    python_lang = crate.add(ComputerLanguage(  # TODO this is surely wrong here
-        crate,
-        identifier="https://python.org",
-        properties={"name": "Python", "version": "3.11", "url": "https://python.org"}
-    ))
+    apache_org = crate.add(
+        ContextEntity(
+            crate,
+            APACHE_ORG_ENTITY,
+            properties={
+                "@type": "Organization",
+                "name": "Apache Software Foundation",
+                "url": APACHE_ORG_ENTITY,
+            },
+        )
+    )
+    airflow = crate.add(
+        SoftwareApplication(
+            crate,
+            "Apache Airflow",
+            properties={
+                "version": AIRFLOW_VERSION,
+                "description": (
+                    "Apache Airflow - A platform to programmatically author,"
+                    " schedule, and monitor workflows"
+                ),
+                "publisher": {"@id": apache_org.id},
+            },
+        )
+    )
+    python_lang = crate.add(
+        ComputerLanguage(  # TODO this is surely wrong here
+            crate,
+            identifier="https://python.org",
+            properties={
+                "name": "Python",
+                "version": "3.11",
+                "url": "https://python.org",
+            },
+        )
+    )
     cwl_entity = build_cwl_entity(crate)
     all_steps = ds_entity.pipeline_steps()
     assert all_steps[0]["name"] == "ingest-pipeline" and not all_steps[0]["cwl"]
     ingest_pipeline_info = all_steps[0]
     hash = ingest_pipeline_info["commit"]
-    desc = (ds_entity["ingest_metadata"]["workflow_description"]
-            if "ingest_metadata" in ds_entity
-            and "workflow_description" in ds_entity["ingest_metadata"]
-            else "Processing steps implemeneted by an ingest-pipeline DAG")
+    desc = (
+        ds_entity["ingest_metadata"]["workflow_description"]
+        if "ingest_metadata" in ds_entity
+        and "workflow_description" in ds_entity["ingest_metadata"]
+        else "Processing steps implemeneted by an ingest-pipeline DAG"
+    )
     cwl_steps = all_steps[1:]
     assert all(step["cwl"] for step in cwl_steps), "Found a step which is not CWL?"
-    step_list = [build_step_entity(step, idx, cwl_entity, crate)
-                 for idx, step in enumerate(cwl_steps)]
-    workflow = crate.add(ContextEntity(
-        crate,
-        "#workflow",
-        properties={
-            "@type": ["ComputationalWorkflow", "SoftwareApplication"],
-            "name":"ingest-pipeline dag workflow",
-            "description": desc,
-            "steps": step_list,
-            "version": hash,
-            "url": ingest_pipeline_info["repo"],
-            "codeRepository": ingest_pipeline_info["repo"],
-            "downloadUrl": f"{ingest_pipeline_info['repo']}/archive/{hash}.zip",
-            "publisher": {"@id": hubmap_org.id},
-            "programmingLanguage": {"@id": python_lang.id},
-            "softwareRequirements": {"@id": airflow.id}
-        }
-    ))
+    step_list = [
+        build_step_entity(step, idx, cwl_entity, crate)
+        for idx, step in enumerate(cwl_steps)
+    ]
+    workflow = crate.add(
+        ContextEntity(
+            crate,
+            "#workflow",
+            properties={
+                "@type": ["ComputationalWorkflow", "SoftwareApplication"],
+                "name": "ingest-pipeline dag workflow",
+                "description": desc,
+                "steps": step_list,
+                "version": hash,
+                "url": ingest_pipeline_info["repo"],
+                "codeRepository": ingest_pipeline_info["repo"],
+                "downloadUrl": f"{ingest_pipeline_info['repo']}/archive/{hash}.zip",
+                "publisher": {"@id": hubmap_org.id},
+                "programmingLanguage": {"@id": python_lang.id},
+                "softwareRequirements": {"@id": airflow.id},
+            },
+        )
+    )
     props = {
         "@id": "#workflow_instance",
         "@type": "CreateAction",
@@ -332,7 +349,7 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         "instrument": {"@id": workflow.id},
         "object": [{"@id": this_id} for this_id in parent_id_list],
         "result": [{"@id": "./"}],  # the target dataset
-        "actionStatus": "CompletedActionStatus"
+        "actionStatus": "CompletedActionStatus",
     }
     return ContextEntity(crate, identifier=props["@id"], properties=props)
 
@@ -342,24 +359,28 @@ def build_profiles(crate: ROCrate) -> tuple:
     Build ContextElements for several profiles needed to describe a workflow.
     """
     base_crate_ctx_id = f"https://w3id.org/ro/crate/{crate.version}"
-    crate_profile = crate.add(ContextEntity(
-        crate,
-        base_crate_ctx_id,
-        properties={
-            "@type": ["CreativeWork", "Profile"],
-            "name": "RO-Crate Profile",
-            "version": crate.version
-        }
-    ))
-    proc_profile = crate.add(ContextEntity(
-        crate,
-        "https://w3id.org/ro/wfrun/process/0.5",
-        properties={
-            "@type": ["CreativeWork", "Profile"],
-            "name": "Process Run Crate Profile",
-            "version": "0.5"
-        }
-    ))
+    crate_profile = crate.add(
+        ContextEntity(
+            crate,
+            base_crate_ctx_id,
+            properties={
+                "@type": ["CreativeWork", "Profile"],
+                "name": "RO-Crate Profile",
+                "version": crate.version,
+            },
+        )
+    )
+    proc_profile = crate.add(
+        ContextEntity(
+            crate,
+            "https://w3id.org/ro/wfrun/process/0.5",
+            properties={
+                "@type": ["CreativeWork", "Profile"],
+                "name": "Process Run Crate Profile",
+                "version": "0.5",
+            },
+        )
+    )
     #    # These two profiles are needed for full software workflows
     #
     # wf_profile = crate.add(ContextEntity(
@@ -387,9 +408,7 @@ def build_profiles(crate: ROCrate) -> tuple:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "target_id", help="Build an RO-Crate for this dataset"
-    )
+    parser.add_argument("target_id", help="Build an RO-Crate for this dataset")
     parser.add_argument(
         "--outdir",
         "-o",
@@ -408,7 +427,7 @@ def main() -> None:
     parser.add_argument(
         "--include_all_files",
         action="store_true",
-        help="Include all files, even if some are not data product or qa resources"
+        help="Include all files, even if some are not data product or qa resources",
     )
     args = parser.parse_args()
     target_id = args.target_id
@@ -439,7 +458,9 @@ def main() -> None:
     for profile in build_profiles(crate):
         crate.root_dataset.append_to("conformsTo", {"@id": profile.id})
 
-    crate.metadata.extra_contexts.append("https://w3id.org/ro/terms/workflow-run/context")
+    crate.metadata.extra_contexts.append(
+        "https://w3id.org/ro/terms/workflow-run/context"
+    )
 
     wrapped_croissant = CroissantWrapper(target_id, ds_entity["title"])
 
@@ -487,18 +508,17 @@ def main() -> None:
             if fl["is_data_product"] or fl["is_qa_qc"] or include_all_files:
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
-                    asset_url(ds_entity["uuid"], fl["rel_path"]),
-                    validate_url=True
+                    asset_url(ds_entity["uuid"], fl["rel_path"]), validate_url=True
                 )
-                wrapped_croissant.add_file(ds_entity["uuid"],
-                                           fl, blk_idx.get(fl["rel_path"]))
+                wrapped_croissant.add_file(
+                    ds_entity["uuid"], fl, blk_idx.get(fl["rel_path"])
+                )
             else:
                 LOGGER.debug(f"{fl['rel_path']} is not a data product")
     else:
         for fl_blk in blk_idx.values():
             crate.add_file(
-                asset_url(ds_entity["uuid"], fl_blk["path"]),
-                validate_url=True
+                asset_url(ds_entity["uuid"], fl_blk["path"]), validate_url=True
             )
             # We have no descriptive info for these files, so it's hard
             # to see how we could add them to the Croissant object
@@ -508,28 +528,31 @@ def main() -> None:
     if not os.path.isdir(outdir):
         os.makedirs(outdir, exist_ok=True)
     wrapped_croissant.write(os.path.join(tmpdir.name, CROISSANT_FILENAME))
-    crate.add(ContextEntity(
-        crate,
-        "http://mlcommons.org/croissant/1.0",
-        properties={
-            "@type": ["CreativeWork", "Profile"],
-            "name": "MLCommons Croissant Format Specification",
-            "version": "1.0",
-            "url": "https://docs.mlcommons.org/croissant/docs/crossant-spec-1.0.html"
-        }
-    ))
+    crate.add(
+        ContextEntity(
+            crate,
+            "http://mlcommons.org/croissant/1.0",
+            properties={
+                "@type": ["CreativeWork", "Profile"],
+                "name": "MLCommons Croissant Format Specification",
+                "version": "1.0",
+                "url": "https://docs.mlcommons.org/croissant/docs/crossant-spec-1.0.html",
+            },
+        )
+    )
     crate.add_file(
         os.path.join(tmpdir.name, CROISSANT_FILENAME),
         properties={
             "name": "Croissant Metadata Descriptor",
             "description": "Machine learning data-loading configurations for this dataset.",
             "encodingFormat": "application/ld+json",
-            "conformsTo": {"@id": "http://mlcommons.org/croissant/1.0"}
-        }
+            "conformsTo": {"@id": "http://mlcommons.org/croissant/1.0"},
+        },
     )
 
     crate.write_zip(os.path.join(outdir, f"{target_id}_crate.zip"))
     tmpdir.cleanup()
+
 
 if __name__ == "__main__":
     main()
