@@ -1,4 +1,5 @@
 #!/bin/env python
+"""Demonstrate the use of the --provenance option to cwltool."""
 
 from pathlib import Path
 from subprocess import run
@@ -8,6 +9,7 @@ from rocrate.rocrate import ROCrate
 
 
 def main():
+    """Demonstrate the use of the --provenance option to cwltool."""
     run("cwltool --provenance prov1 hello_world.cwl", shell=True, check=True)
     run(
         "cwltool --provenance prov2 hello_world.cwl --message 'hola'",
