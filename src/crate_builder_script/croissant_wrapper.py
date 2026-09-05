@@ -95,7 +95,7 @@ def _specimen_chain(entity: WrappedEntity) -> dict:
     def node(anc):
         n = {
             "@type": "prov:Entity",
-            "@id": HUBMAP + (anc.get("hubmap_id") or ""),
+            "@id": HUBMAP + anc.get("hubmap_id", ""),
             "schema:name": anc.get("hubmap_id"),
             "hubmap:entityType": anc.get("entity_type"),
             "hubmap:sampleCategory": anc.get("sample_category"),
@@ -181,7 +181,7 @@ def build_embedded_provenance(
         provo["hubmap:hasProcessedDataset"] = [
             {
                 "@type": "prov:Entity",
-                "@id": HUBMAP + (d.get("hubmap_id") or ""),
+                "@id": HUBMAP + d.get("hubmap_id", ""),
                 "schema:name": d.get("hubmap_id"),
                 "hubmap:datasetType": d.get("dataset_type"),
             }

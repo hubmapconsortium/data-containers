@@ -85,11 +85,11 @@ def is_processed(entity: dict) -> bool:
 
     Raw vs processed: `creation_action` is 'Create Dataset Activity' vs 'Central Process'.
     """
-    return "process" in (entity.get("creation_action") or "").lower()
+    return "process" in entity.get("creation_action", "").lower()
 
 
 def _own_dag(entity: dict) -> list:
-    return (entity.get("ingest_metadata") or {}).get("dag_provenance_list", [])
+    return entity.get("ingest_metadata", {}).get("dag_provenance_list", [])
 
 
 def pipeline_steps(entity: dict) -> list[dict]:
@@ -97,10 +97,10 @@ def pipeline_steps(entity: dict) -> list[dict]:
     dag_list = _own_dag(entity)
     steps, seen = [], set()
     for s in dag_list or []:
-        repo = (s.get("origin") or "").strip().replace(".git", "")
-        name = repo.rsplit("/", 1)[-1] if repo else (s.get("name") or "")
-        commit = (s.get("hash") or "")[:7]
-        cwl = s.get("name") or ""
+        repo = s.get("origin", "").strip().replace(".git", "")
+        name = repo.rsplit("/", 1)[-1] if repo else s.get("name", "")
+        commit = s.get("hash", "")[:7]
+        cwl = s.get("name", "")
         key = (name, commit, cwl)
         if not name or key in seen:
             continue
