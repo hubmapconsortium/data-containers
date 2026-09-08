@@ -489,6 +489,8 @@ def main() -> None:
         crate.root_dataset["identifier"] = doi_url
         crate.root_dataset["sameAs"] = doi_url
         wrapped_croissant.cite_as = doi_url
+    elif "doi_url" in ds_entity["direct_ancestors"][0]:
+        wrapped_croissant.cite_as = ds_entity["direct_ancestors"][0]["doi_url"]
 
     if "published_timestamp" in ds_entity:
         date_published = str(
