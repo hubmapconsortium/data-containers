@@ -2,6 +2,7 @@
 import json
 import logging
 from pprint import pformat
+from pathlib import Path
 
 import mlcroissant as mlc
 from api_calls import HUBMAP, asset_url, fetch_entity_info
@@ -10,21 +11,24 @@ from extractors import WrappedEntity
 LOGGER = logging.getLogger(__name__)
 
 EDAM_INFO = {
-    "EDAM_1.24.format_3727": {"desc": "tiff", "mime": "image/tiff"},
-    "EDAM_1.24.format_3464": {"desc": "json", "mime": "application/json"},
-    "EDAM_1.24.format_3508": {"desc": "pdf", "mime": "application/pdf"},
-    "EDAM_1.24.format_3590": {"desc": "hdf5", "mime": "application/x-hdf5"},
-    "EDAM_1.24.format_3987": {"desc": "zip", "mime": "application/zip"},
-    "EDAM_1.24.format_3752": {"desc": "csv", "mime": "text/csv"},
-    "EDAM_1.24.format_3755": {"desc": "tsv", "mime": "text/tab-separated-values"},
-    "EDAM_1.24.format_3790": {"desc": "h5ad (anndata)", "mime": "application/x-hdf5"},
-    "EDAM_1.24.format_3915": {"desc": "zarr", "mime": "application/vnd.zarr"},
-    "EDAM_1.24.format_4006": {
+    ("EDAM_1.24.format_3727", None): {"desc": "tiff", "mime": "image/tiff"},
+    ("EDAM_1.24.format_3464", None): {"desc": "json", "mime": "application/json"},
+    ("EDAM_1.24.format_3508", None): {"desc": "pdf", "mime": "application/pdf"},
+    ("EDAM_1.24.format_3590", None): {"desc": "hdf5", "mime": "application/x-hdf5"},
+    ("EDAM_1.24.format_3987", None): {"desc": "zip", "mime": "application/zip"},
+    ("EDAM_1.24.format_3752", None): {"desc": "csv", "mime": "text/csv"},
+    ("EDAM_1.24.format_3755", None): {"desc": "tsv", "mime": "text/tab-separated-values"},
+    ("EDAM_1.24.format_3790", None): {"desc": "h5ad (anndata)", "mime": "application/x-hdf5"},
+    ("EDAM_1.24.format_3915", None): {"desc": "zarr", "mime": "application/vnd.zarr"},
+    ("EDAM_1.24.format_4006", None): {
         "desc": "zarr (spatialdata)",
         "mime": "application/vnd.zarr",
     },
-    "EDAM_1.24.data_3671": {"desc": "plain text", "mime": "text/plain"},
-    "EDAM_1.24.format_3916": {"desc": "adjacency matrix", "mime": "text/plain"},
+    ("EDAM_1.24.data_3671", None): {"desc": "plain text", "mime": "text/plain"},
+    ("EDAM_1.24.format_3916", ".mtx"): {"desc": "adjacency matrix", "mime": "text/plain"},
+    (None, ".html"): {"desc": "unknown but html encoded", "mime": "text/html"},
+    (None, ".tsv"): {"desc": "unknown but tsv encoded", "mime": "text/tab-separated-values"},
+    (None, ".csv"): {"desc": "unknown but csv encoded", "mime": "text/csv"}
 }
 
 
@@ -234,9 +238,14 @@ class CroissantWrapper:
             "description": file_info["description"],
             "content_url": asset_url(ds_uuid, file_info["rel_path"]),
         }
+        path_ext = Path(file_info["rel_path"]).suffix
         if edam := file_info.get("edam_term"):
-            if edam in EDAM_INFO:
-                args["encoding_formats"] = [EDAM_INFO[edam]["mime"]]
+            if (edam, None) in EDAM_INFO:
+                args["encoding_formats"] = [EDAM_INFO[(edam, None)]["mime"]]
+            elif (edam, path_ext) in EDAM_INFO:
+                args["encoding_formats"] = [EDAM_INFO[(edam, path_ext)]["mime"]]
+            elif (None, path_ext) in EDAM_INFO:
+                args["encoding_formats"] = [EDAM_INFO[(None, path_ext)]["mime"]]
             else:
                 LOGGER.warning(f"Unknown EDAM format {edam} for {pformat(file_info)}")
                 args["encoding_formats"] = ["application/octet-stream"]
