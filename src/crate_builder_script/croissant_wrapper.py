@@ -143,6 +143,17 @@ def _pipeline_activity(entity: WrappedEntity) -> dict:
     return act
 
 
+def _build_raw_node(raw_entity: WrappedEntity, raw_md: dict | None) -> dict:
+    return {
+        "@type": "prov:Entity",
+        "@id": HUBMAP + (raw_entity.get("hubmap_id") or ""),
+        "schema:name": raw_entity.get("hubmap_id"),
+        "hubmap:datasetType": raw_entity.get("dataset_type"),
+        "prov:wasGeneratedBy": _acquisition_activity(raw_entity, raw_md or {}),
+        "prov:wasDerivedFrom": _specimen_chain(raw_entity),
+    }
+
+
 def build_embedded_provenance(
     entity: WrappedEntity, md: dict | None, descendants: list | None = None
 ) -> dict:
@@ -159,21 +170,18 @@ def build_embedded_provenance(
         assert len(ancestor_chain) == 1, "internal error walking ancestors"
         check_id, ignored_entity, ancestors = ancestor_chain[0]
         assert check_id == hubmap_id
-        assert len(ancestors) == 1, f"Dataset {hubmap_id} has too many ancestors"
-        raw_entity = WrappedEntity(ancestors[0][1])
-        raw_md = raw_entity.get("metadata")
-        raw_node = {
-            "@type": "prov:Entity",
-            "@id": HUBMAP + (raw_entity.get("hubmap_id") or ""),
-            "schema:name": raw_entity.get("hubmap_id"),
-            "hubmap:datasetType": raw_entity.get("dataset_type"),
-            "prov:wasGeneratedBy": _acquisition_activity(raw_entity, raw_md or {}),
-            "prov:wasDerivedFrom": _specimen_chain(raw_entity),
-        }
+        raw_node_l = []
+        for anc in ancestors:
+            anc_entity = WrappedEntity(anc[1])  # each ancestor is a 3-tuple
+            anc_md = anc_entity.get("metadata")
+            raw_node_l.append(_build_raw_node(anc_entity, anc_md))
         return {
             "prov:wasGeneratedBy": _pipeline_activity(entity),
-            "prov:wasDerivedFrom": raw_node,
+            "prov:wasDerivedFrom": (
+                raw_node_l[0] if len(raw_node_l) == 1 else raw_node_l
+            ),
         }
+
     provo = {"prov:wasGeneratedBy": _acquisition_activity(entity, md)}
     if chain := _specimen_chain(entity):
         provo["prov:wasDerivedFrom"] = chain
