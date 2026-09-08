@@ -21,11 +21,14 @@ HUBMAP_ORG_ENTITY = HUBMAP  # for lack of a better choice
 
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
     """Fetch a dataset's entity information."""
-    resp = requests.get(
-        ENTITY_API + f"/entities/{target_id}",
-        headers={"Authorization": f"Bearer {AUTH_TOK}"},
-    )
-    resp.raise_for_status()
+    try:
+        resp = requests.get(
+            ENTITY_API + f"/entities/{target_id}",
+            headers={"Authorization": f"Bearer {AUTH_TOK}"},
+        )
+        resp.raise_for_status()
+    except Exception as excp:
+        raise RuntimeError(f"Fetch of entity {target_id} failed: {excp}") from excp
     ds_info = resp.json()
     LOGGER.debug("TOP LEVEL for %s:\n%s", target_id, pformat(ds_info, depth=1))
     LOGGER.debug(
@@ -33,7 +36,9 @@ def fetch_entity_info(target_id: str) -> dict[str, Any]:
     )
     LOGGER.debug("METADATA:\n%s", pformat(ds_info.get("metadata", {}), depth=2))
     LOGGER.debug(
-        "DIRECT ANCESTORS:\n%s", pformat(ds_info.get("direct_ancestors"), depth=2)
+        "DIRECT ANCESTORS: %s\n%s",
+        [elt['hubmap_id'] for elt in ds_info.get('direct_ancestors',[])],
+        pformat(ds_info.get("direct_ancestors"), depth=2)
     )
     LOGGER.debug(
         "DIRECT ANCESTOR:\n%s", pformat(ds_info.get("direct_ancestor"), depth=2)
