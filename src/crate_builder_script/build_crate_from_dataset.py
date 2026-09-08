@@ -243,28 +243,47 @@ def build_cwl_entity(crate: ROCrate) -> ContextEntity:
 
 
 def build_step_entity(
-    step: dict, idx: int, cwl_entity: ContextEntity, crate: ROCrate
+    step: dict, idx: int, cwl_entity: ContextEntity, python_entity: ContextEntity,
+    crate: ROCrate
 ) -> ContextEntity:
     """Build an entity representing one step of the provenance chain."""
     pos = idx + 1
     id_str = f"#step_{pos}"
     hash = step["commit"]
-    return crate.add(
-        ContextEntity(
-            crate,
-            id_str,
-            properties={
-                "position": pos,
-                "@type": "HowToStep",
-                "name": step["cwl"],
-                "description": step["name"],
-                "version": hash,
-                "url": step["repo"],
-                "codeRepository": step["repo"],
-                "programmingLanguage": cwl_entity.id,
-            },
+    if step["cwl"]:
+        return crate.add(
+            ContextEntity(
+                crate,
+                id_str,
+                properties={
+                    "position": pos,
+                    "@type": "HowToStep",
+                    "name": step["cwl"],
+                    "description": step["name"],
+                    "version": hash,
+                    "url": step["repo"],
+                    "codeRepository": step["repo"],
+                    "programmingLanguage": cwl_entity.id,
+                },
+            )
         )
-    )
+    else:
+        return crate.add(
+            ContextEntity(
+                crate,
+                id_str,
+                properties={
+                    "position": pos,
+                    "@type": "HowToStep",
+                    "name": step["name"],
+                    "description": step["name"],
+                    "version": hash,
+                    "url": step["repo"],
+                    "codeRepository": step["repo"],
+                    "programmingLanguage": python_entity.id,
+                },
+            )
+        )
 
 
 def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntity:
@@ -336,9 +355,8 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         else "Processing steps implemented by an ingest-pipeline DAG"
     )
     cwl_steps = all_steps[1:]
-    assert all(step["cwl"] for step in cwl_steps), "Found a step which is not CWL?"
     step_list = [
-        build_step_entity(step, idx, cwl_entity, crate)
+        build_step_entity(step, idx, cwl_entity, python_lang, crate)
         for idx, step in enumerate(cwl_steps)
     ]
     workflow = crate.add(
