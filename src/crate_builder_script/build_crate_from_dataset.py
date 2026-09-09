@@ -5,7 +5,7 @@ import os
 from collections import defaultdict
 from datetime import datetime, timezone
 
-# from pprint import pformat, pprint
+from pprint import pformat
 from tempfile import TemporaryDirectory
 from typing import List
 
@@ -155,11 +155,22 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
     ent_l = []
     role_d = {}
     role_list_d = defaultdict(list)
+    from pprint import pprint
     for contrib in contributors:
+        from pprint import pprint
+        pprint(contrib)
+        orcid = contrib.get("orcid", contrib.get("orcid_id"))
+        if not orcid:
+            LOGGER.error("Contributor with no orcid ID: %s", pformat(contrib))
+            raise RuntimeError("Missing contributor orcid ID")
+        display_name = contrib.get("display_name", contrib.get("name"))
+        if not display_name:
+            LOGGER.error("Contributor with no display name: %s", pformat(contrib))
+            raise RuntimeError("Missing contributor display name")
         props = {
             "@type": "Person",
-            "@id": f"{ORCID_URI}/{contrib['orcid']}",
-            "name": contrib["display_name"],
+            "@id": f"{ORCID_URI}/{orcid}",
+            "name": display_name,
         }
         person = Person(crate, identifier=props["@id"], properties=props)
         add_to_entities = True
@@ -168,7 +179,7 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
             ("is_contact", build_contact_entity),
             ("is_operator", build_ia_entity),
         ]:
-            if contrib[match_key].lower() == "yes":
+            if contrib.get(match_key, "").lower() == "yes":
                 entity = role_d.get(match_key) or builder(crate)
                 role_d.setdefault(match_key, entity)
                 role_list_d[match_key].append(crate.add(person))
