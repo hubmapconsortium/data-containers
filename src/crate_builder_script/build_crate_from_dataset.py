@@ -312,7 +312,7 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
                 parent_info["doi_url"],
                 properties={
                     "name": parent_id,
-                    "description": parent_info["description"],
+                    "description": parent_info.get("description", ""),
                 },
             )
         )
