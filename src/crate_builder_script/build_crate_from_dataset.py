@@ -45,6 +45,8 @@ OBOLIB_URI = "http://purl.obolibrary.org/obo"
 AIRFLOW_VERSION = "2.11.0"
 CWL_VERSION = "v1.1"
 
+DEFAULT_INGEST_PIPELINE_URL = "https://github.com/hubmapconsortium/ingest-pipeline"
+
 ###############
 # Notes-
 # - count_versions() is essentially untested, for lack of an example
@@ -333,7 +335,7 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         )
     )
     python_lang = crate.add(
-        ComputerLanguage(  # TODO this is surely wrong here
+        ComputerLanguage(
             crate,
             identifier="https://python.org",
             properties={
@@ -344,50 +346,77 @@ def build_derived_prov(ds_entity: WrappedEntity, crate: ROCrate) -> ContextEntit
         )
     )
     cwl_entity = build_cwl_entity(crate)
-    all_steps = ds_entity.pipeline_steps()
-    assert all_steps[0]["name"] == "ingest-pipeline" and not all_steps[0]["cwl"]
-    ingest_pipeline_info = all_steps[0]
-    hash = ingest_pipeline_info["commit"]
-    desc = (
-        ds_entity["ingest_metadata"]["workflow_description"]
-        if "ingest_metadata" in ds_entity
-        and "workflow_description" in ds_entity["ingest_metadata"]
-        else "Processing steps implemented by an ingest-pipeline DAG"
-    )
-    cwl_steps = all_steps[1:]
-    step_list = [
-        build_step_entity(step, idx, cwl_entity, python_lang, crate)
-        for idx, step in enumerate(cwl_steps)
-    ]
-    workflow = crate.add(
-        ContextEntity(
-            crate,
-            "#workflow",
-            properties={
-                "@type": ["ComputationalWorkflow", "SoftwareApplication"],
-                "name": "ingest-pipeline dag workflow",
-                "description": desc,
-                "steps": step_list,
-                "version": hash,
-                "url": ingest_pipeline_info["repo"],
-                "codeRepository": ingest_pipeline_info["repo"],
-                "downloadUrl": f"{ingest_pipeline_info['repo']}/archive/{hash}.zip",
-                "publisher": {"@id": hubmap_org.id},
-                "programmingLanguage": {"@id": python_lang.id},
-                "softwareRequirements": {"@id": airflow.id},
-            },
+    if all_steps := ds_entity.pipeline_steps():
+        assert all_steps[0]["name"] == "ingest-pipeline" and not all_steps[0]["cwl"]
+        ingest_pipeline_info = all_steps[0]
+        hash = ingest_pipeline_info["commit"]
+        desc = (
+            ds_entity["ingest_metadata"]["workflow_description"]
+            if "ingest_metadata" in ds_entity
+            and "workflow_description" in ds_entity["ingest_metadata"]
+            else "Processing steps implemented by an ingest-pipeline DAG"
         )
-    )
-    props = {
-        "@id": "#workflow_instance",
-        "@type": "CreateAction",
-        "name": "the-create-action",
-        "agent": {"@id": workflow.id},
-        "instrument": {"@id": workflow.id},
-        "object": [{"@id": this_id} for this_id in parent_id_list],
-        "result": [{"@id": "./"}],  # the target dataset
-        "actionStatus": "CompletedActionStatus",
-    }
+        cwl_steps = all_steps[1:]
+        step_list = [
+            build_step_entity(step, idx, cwl_entity, python_lang, crate)
+            for idx, step in enumerate(cwl_steps)
+        ]
+        workflow = crate.add(
+            ContextEntity(
+                crate,
+                "#workflow",
+                properties={
+                    "@type": ["ComputationalWorkflow", "SoftwareApplication"],
+                    "name": "ingest-pipeline dag workflow",
+                    "description": desc,
+                    "steps": step_list,
+                    "version": hash,
+                    "url": ingest_pipeline_info["repo"],
+                    "codeRepository": ingest_pipeline_info["repo"],
+                    "downloadUrl": f"{ingest_pipeline_info['repo']}/archive/{hash}.zip",
+                    "publisher": {"@id": hubmap_org.id},
+                    "programmingLanguage": {"@id": python_lang.id},
+                    "softwareRequirements": {"@id": airflow.id},
+                },
+            )
+        )
+        props = {
+            "@id": "#workflow_instance",
+            "@type": "CreateAction",
+            "name": "the-create-action",
+            "agent": {"@id": workflow.id},
+            "instrument": {"@id": workflow.id},
+            "object": [{"@id": this_id} for this_id in parent_id_list],
+            "result": [{"@id": "./"}],  # the target dataset
+            "actionStatus": "CompletedActionStatus",
+        }
+    else:
+        workflow = crate.add(
+            ContextEntity(
+                crate,
+                "#workflow",
+                properties={
+                    "@type": ["ComputationalWorkflow", "SoftwareApplication"],
+                    "name": "ingest-pipeline dag workflow",
+                    "description": "Processing steps implemented by an ingest-pipeline DAG",
+                    "url": DEFAULT_INGEST_PIPELINE_URL,
+                    "codeRepository": DEFAULT_INGEST_PIPELINE_URL,
+                    "publisher": {"@id": hubmap_org.id},
+                    "programmingLanguage": {"@id": python_lang.id},
+                    "softwareRequirements": {"@id": airflow.id},
+                },
+            )
+        )
+        props = {
+            "@id": "#workflow_instance",
+            "@type": "CreateAction",
+            "name": "the-create-action",
+            "agent": {"@id": workflow.id},
+            "instrument": {"@id": workflow.id},
+            "object": [{"@id": this_id} for this_id in parent_id_list],
+            "result": [{"@id": "./"}],  # the target dataset
+            "actionStatus": "CompletedActionStatus",
+        }
     return ContextEntity(crate, identifier=props["@id"], properties=props)
 
 
