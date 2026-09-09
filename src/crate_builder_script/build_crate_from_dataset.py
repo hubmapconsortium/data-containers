@@ -157,8 +157,6 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
     role_list_d = defaultdict(list)
     from pprint import pprint
     for contrib in contributors:
-        from pprint import pprint
-        pprint(contrib)
         orcid = contrib.get("orcid", contrib.get("orcid_id"))
         if not orcid:
             LOGGER.error("Contributor with no orcid ID: %s", pformat(contrib))
@@ -583,7 +581,8 @@ def main() -> None:
     if "files" in ds_entity:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_entity["files"]:
-            if fl["is_data_product"] or fl["is_qa_qc"] or include_all_files:
+            if (fl.get("is_data_product", False) or fl.get("is_qa_qc", False)
+                or include_all_files):
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
                     asset_url(ds_entity["uuid"], fl["rel_path"]), validate_url=True
@@ -592,7 +591,7 @@ def main() -> None:
                     ds_entity["uuid"], fl, blk_idx.get(fl["rel_path"])
                 )
             else:
-                LOGGER.debug(f"{fl['rel_path']} is not a data product")
+                LOGGER.debug(f"{fl['rel_path']} is not a data product or qa_qc")
     else:
         for fl_blk in blk_idx.values():
             crate.add_file(
