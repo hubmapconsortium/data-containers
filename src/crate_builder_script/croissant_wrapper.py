@@ -28,7 +28,8 @@ EDAM_INFO = {
     ("EDAM_1.24.format_3916", ".mtx"): {"desc": "adjacency matrix", "mime": "text/plain"},
     (None, ".html"): {"desc": "unknown but html encoded", "mime": "text/html"},
     (None, ".tsv"): {"desc": "unknown but tsv encoded", "mime": "text/tab-separated-values"},
-    (None, ".csv"): {"desc": "unknown but csv encoded", "mime": "text/csv"}
+    (None, ".csv"): {"desc": "unknown but csv encoded", "mime": "text/csv"},
+    ("EDAM_1.24.format_2333", None): {"desc": "binary format", "mime": "application/octet-stream"}
 }
 
 
