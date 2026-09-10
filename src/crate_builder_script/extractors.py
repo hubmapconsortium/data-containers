@@ -31,23 +31,20 @@ def walk_ancestors(
     e_id = entity.get("hubmap_id")
     LOGGER.debug(f"walk_ancestors {e_id} {e_type}")
     if e_type == "Dataset":
+        if not entity.get("direct_ancestors"):
+            entity = WrappedEntity(fetch_entity_info(e_id))
+            assert entity["hubmap_id"] == e_id
+            assert entity["entity_type"] == e_type
+            assert entity["direct_ancestors"], f"{e_id} is a dataset with no direct ancestors"
         ancs = [
             walk_ancestors(anc, continue_test)
             for anc in entity.get("direct_ancestors", [])
         ]
-        if ancs:
-            all_tuples = []
-            for sub_list in ancs:
-                assert isinstance(sub_list, list)
-                all_tuples.extend(sub_list)
-            rslt.append((e_id, entity, all_tuples))
-        else:
-            md = entity.get("metadata", {})
-            if "parent_sample_id" in md:
-                # The parent is a sample
-                samp_id = md["parent_sample_id"]
-                samp_entity = fetch_entity_info(samp_id)
-                rslt.append((e_id, entity, walk_ancestors(samp_entity, continue_test)))
+        all_tuples = []
+        for sub_list in ancs:
+            assert isinstance(sub_list, list)
+            all_tuples.extend(sub_list)
+        rslt.append((e_id, entity, all_tuples))
     elif e_type in ("Sample", "Donor"):
         e_cat = entity.get("sample_category", "UNKNOWN SAMPLE CATEGORY")
         LOGGER.debug(f"walk_ancestors sample category is {e_cat}")

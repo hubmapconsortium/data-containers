@@ -21,6 +21,7 @@ HUBMAP_ORG_ENTITY = HUBMAP  # for lack of a better choice
 
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
     """Fetch a dataset's entity information."""
+    LOGGER.debug("FETCH %s", target_id)
     try:
         resp = requests.get(
             ENTITY_API + f"/entities/{target_id}",
