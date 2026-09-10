@@ -3,6 +3,7 @@ import logging
 import os
 from pprint import pformat
 from typing import Any
+from functools import lru_cache
 
 import requests
 
@@ -19,6 +20,7 @@ HUBMAP = "https://hubmapconsortium.org/"
 HUBMAP_ORG_ENTITY = HUBMAP  # for lack of a better choice
 
 
+@lru_cache(maxsize=8)
 def fetch_entity_info(target_id: str) -> dict[str, Any]:
     """Fetch a dataset's entity information."""
     LOGGER.debug("FETCH %s", target_id)
@@ -57,6 +59,7 @@ def fetch_entity_info(target_id: str) -> dict[str, Any]:
     return ds_info
 
 
+@lru_cache(maxsize=8)
 def fetch_uuid_files_info(target_id: str) -> dict[str, Any]:
     """Fetch files informaion from the UUID API."""
     resp = requests.get(
