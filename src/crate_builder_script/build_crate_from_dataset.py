@@ -4,7 +4,6 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-
 from pprint import pformat
 from tempfile import TemporaryDirectory
 from typing import List
@@ -155,7 +154,7 @@ def build_contributors(crate: ROCrate, contributors: List[dict]) -> List[Context
     ent_l = []
     role_d = {}
     role_list_d = defaultdict(list)
-    from pprint import pprint
+
     for contrib in contributors:
         orcid = contrib.get("orcid", contrib.get("orcid_id"))
         if not orcid:
@@ -254,8 +253,11 @@ def build_cwl_entity(crate: ROCrate) -> ContextEntity:
 
 
 def build_step_entity(
-    step: dict, idx: int, cwl_entity: ContextEntity, python_entity: ContextEntity,
-    crate: ROCrate
+    step: dict,
+    idx: int,
+    cwl_entity: ContextEntity,
+    python_entity: ContextEntity,
+    crate: ROCrate,
 ) -> ContextEntity:
     """Build an entity representing one step of the provenance chain."""
     pos = idx + 1
@@ -581,8 +583,11 @@ def main() -> None:
     if "files" in ds_entity:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_entity["files"]:
-            if (fl.get("is_data_product", False) or fl.get("is_qa_qc", False)
-                or include_all_files):
+            if (
+                fl.get("is_data_product", False)
+                or fl.get("is_qa_qc", False)
+                or include_all_files
+            ):
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
                     asset_url(ds_entity["uuid"], fl["rel_path"]), validate_url=True

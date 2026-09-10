@@ -35,7 +35,9 @@ def walk_ancestors(
             entity = WrappedEntity(fetch_entity_info(e_id))
             assert entity["hubmap_id"] == e_id
             assert entity["entity_type"] == e_type
-            assert entity["direct_ancestors"], f"{e_id} is a dataset with no direct ancestors"
+            assert entity[
+                "direct_ancestors"
+            ], f"{e_id} is a dataset with no direct ancestors"
         ancs = [
             walk_ancestors(anc, continue_test)
             for anc in entity.get("direct_ancestors", [])

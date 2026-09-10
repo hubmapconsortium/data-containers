@@ -1,9 +1,9 @@
 """Handle requests to HuBMAP APIs."""
 import logging
 import os
+from functools import lru_cache
 from pprint import pformat
 from typing import Any
-from functools import lru_cache
 
 import requests
 
@@ -40,8 +40,8 @@ def fetch_entity_info(target_id: str) -> dict[str, Any]:
     LOGGER.debug("METADATA:\n%s", pformat(ds_info.get("metadata", {}), depth=2))
     LOGGER.debug(
         "DIRECT ANCESTORS: %s\n%s",
-        [elt['hubmap_id'] for elt in ds_info.get('direct_ancestors',[])],
-        pformat(ds_info.get("direct_ancestors"), depth=2)
+        [elt["hubmap_id"] for elt in ds_info.get("direct_ancestors", [])],
+        pformat(ds_info.get("direct_ancestors"), depth=2),
     )
     LOGGER.debug(
         "DIRECT ANCESTOR:\n%s", pformat(ds_info.get("direct_ancestor"), depth=2)
