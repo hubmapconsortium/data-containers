@@ -45,6 +45,10 @@ EDAM_INFO = {
         "desc": "binary format",
         "mime": "application/octet-stream",
     },
+    ("EDAM_1.24.format_3003", None): {
+        "desc": "BED (Browser Extensible Data)",
+        "mime": "text/x-bed",
+    },
 }
 
 
