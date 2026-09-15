@@ -9,6 +9,20 @@ from api_calls import fetch_entity_info
 
 LOGGER = logging.getLogger(__name__)
 
+# HuBMAP two-letter organ codes -> (label, UBERON term)
+ORGAN_MAP = {
+    "LY": ("Lymph Node", "UBERON:0000029"), "SP": ("Spleen", "UBERON:0002106"),
+    "TH": ("Thymus", "UBERON:0002370"), "BM": ("Bone Marrow", "UBERON:0002371"),
+    "LK": ("Kidney (left)", "UBERON:0004538"), "RK": ("Kidney (right)", "UBERON:0004539"),
+    "HT": ("Heart", "UBERON:0000948"), "LI": ("Large Intestine", "UBERON:0000059"),
+    "SI": ("Small Intestine", "UBERON:0002108"), "LL": ("Lung (left)", "UBERON:0002168"),
+    "RL": ("Lung (right)", "UBERON:0002167"), "LV": ("Liver", "UBERON:0002107"),
+    "PA": ("Pancreas", "UBERON:0001264"), "BL": ("Bladder", "UBERON:0001255"),
+    "SK": ("Skin", "UBERON:0002097"),
+    "LF": ("Fallopian tube (left)", "UBERON:0001303"),
+    "RF": ("Fallopian tube (right)", "UBERON:0001302"),
+}
+
 
 def walk_ancestors(
     entity: dict, continue_test: Callable[[dict], bool] = lambda ent: True
@@ -166,3 +180,37 @@ class WrappedEntity:
             return prev_ent.count_versions() + 1
         else:
             return 1
+
+    def _organ(self, ancs: list[dict]) -> tuple:
+        for anc in ancs:
+            if anc.get("organ"):
+                return ORGAN_MAP.get(anc["organ"], (anc["organ"], None))
+        return None, None
+
+    def keywords(self) -> list[str]:
+        """Return a list of keywords appropriate to the dataset"""
+        kws: list[str] = []
+        md = self.get("metadata", {})
+        for v in [self.get("dataset_type"), md.get("assay_category"), md.get("analyte_class")]:
+            print(f"TRYING {v}")
+            if v and v not in kws:
+                kws.append(v)
+        # we need the ancestors which are samples
+        ancs = self.list_ancestors(omit_test=lambda dct: dct["entity_type"] == "Dataset")
+        organ_label, uberon = self._organ(ancs)
+        if organ_label:
+            kws.append(organ_label)
+            if uberon:
+                kws.append(uberon)
+        for anc in ancs:
+            rui = anc.get("rui_location")
+            if rui:
+                r = json.loads(rui) if isinstance(rui, str) else rui
+                for term in r.get("ccf_annotations", []) or []:
+                    short = "UBERON:" + term.rsplit("_", 1)[-1] if "UBERON" in term else term
+                    if short not in kws:
+                        kws.append(short)
+                break
+        kws += ["Homo sapiens", "NCBITaxon:9606", "HuBMAP"]
+        LOGGER.info(f"KEYWORDS: {pformat(kws)}")
+        return kws

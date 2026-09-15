@@ -345,6 +345,8 @@ class CroissantWrapper:
             args["version"] = self.version
         if self.cite_as_doi:
             args["cite_as"] = _build_citation(entity, self.cite_as_doi)
+        if kwds := entity.keywords():
+            args["keywords"] = kwds
         croissant_meta = mlc.Metadata(**args).to_json()
         croissant_meta["@context"].update(
             {
