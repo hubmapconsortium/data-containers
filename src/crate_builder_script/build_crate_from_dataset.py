@@ -50,10 +50,7 @@ DEFAULT_INGEST_PIPELINE_URL = "https://github.com/hubmapconsortium/ingest-pipeli
 # Notes-
 # - count_versions() is essentially untested, for lack of an example
 # - croissant cite_as uses the DOI, and that only gets set for primary datasets. Do we
-#   want to reference the primary dataset's DOI as the derived dataset's cite_as?
-# - Some EDAM codes, e.g. 3916 (adjacency matrix), are not sufficient to specify
-#   the mime type to associate with a file.  Should we use extensions instead? Some
-#   specialization would be lost.
+#   want to reference the primary dataset's DOI in the derived dataset's cite_as?
 # - Writing a croissant for a file in an unpublished dataset results in an error at
 #   validation time because the file block information from uuid-api has not yet been
 #   set so the sha256 code is not known.
@@ -546,9 +543,9 @@ def main() -> None:
         doi_url = ds_entity["doi_url"]
         crate.root_dataset["identifier"] = doi_url
         crate.root_dataset["sameAs"] = doi_url
-        wrapped_croissant.cite_as = doi_url
+        wrapped_croissant.cite_as_doi = doi_url
     elif "doi_url" in ds_entity["direct_ancestors"][0]:
-        wrapped_croissant.cite_as = ds_entity["direct_ancestors"][0]["doi_url"]
+        wrapped_croissant.cite_as_doi = ds_entity["direct_ancestors"][0]["doi_url"]
 
     if "published_timestamp" in ds_entity:
         date_published = str(
