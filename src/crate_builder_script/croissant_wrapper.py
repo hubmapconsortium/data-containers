@@ -54,19 +54,27 @@ EDAM_INFO = {
 
 
 def _ts_to_iso(ms):
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date().isoformat() if ms else None
+    return (
+        datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date().isoformat()
+        if ms
+        else None
+    )
 
 
 def _creators(entity: dict) -> list[dict]:
     out = []
     for c in entity.get("contributors", []):
-        name = c.get("name") or f"{c.get('first_name','')} {c.get('last_name','')}".strip()
+        name = (
+            c.get("name") or f"{c.get('first_name','')} {c.get('last_name','')}".strip()
+        )
         if not name:
             continue
         person = {"name": name}
         orcid = (c.get("orcid_id") or c.get("orcid") or "").strip()
         if orcid:
-            person["url"] = orcid if orcid.startswith("http") else f"https://orcid.org/{orcid}"
+            person["url"] = (
+                orcid if orcid.startswith("http") else f"https://orcid.org/{orcid}"
+            )
         out.append(person)
     return out
 
@@ -76,7 +84,9 @@ def _build_citation(entity: WrappedEntity, doi) -> str:
     year = (_ts_to_iso(entity.get("published_timestamp")) or "")[:4]
     title = entity.get("title") or entity.get("hubmap_id", "")
     keystr = f"HUBMAP_{entity['hubmap_id']}"
-    short_doi = doi.replace("doi.org/","").replace("http://","").replace("https://","")
+    short_doi = (
+        doi.replace("doi.org/", "").replace("http://", "").replace("https://", "")
+    )
     return (
         "@data{"
         f"{keystr}, "
@@ -334,10 +344,7 @@ class CroissantWrapper:
         if self.version:
             args["version"] = self.version
         if self.cite_as_doi:
-            args["cite_as"] = _build_citation(
-                entity,
-                self.cite_as_doi
-            )
+            args["cite_as"] = _build_citation(entity, self.cite_as_doi)
         croissant_meta = mlc.Metadata(**args).to_json()
         croissant_meta["@context"].update(
             {
