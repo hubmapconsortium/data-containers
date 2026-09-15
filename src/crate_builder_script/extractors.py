@@ -187,16 +187,21 @@ class WrappedEntity:
                 return ORGAN_MAP.get(anc["organ"], (anc["organ"], None))
         return None, None
 
+    @staticmethod
+    def _assay_info_kwds(ancs: list) -> list[str]:
+        rslt = []
+        for anc in ancs:
+            md = anc.get("metadata", {})
+            for v in [anc.get("dataset_type"), md.get("assay_category"), md.get("analyte_class")]:
+                if v and v not in rslt:
+                    rslt.append(v)
+        return rslt
+
     def keywords(self) -> list[str]:
         """Return a list of keywords appropriate to the dataset"""
         kws: list[str] = []
-        md = self.get("metadata", {})
-        for v in [self.get("dataset_type"), md.get("assay_category"), md.get("analyte_class")]:
-            print(f"TRYING {v}")
-            if v and v not in kws:
-                kws.append(v)
-        # we need the ancestors which are samples
-        ancs = self.list_ancestors(omit_test=lambda dct: dct["entity_type"] == "Dataset")
+        ancs = self.list_ancestors()
+        kws.extend(self._assay_info_kwds(ancs))
         organ_label, uberon = self._organ(ancs)
         if organ_label:
             kws.append(organ_label)
@@ -212,5 +217,5 @@ class WrappedEntity:
                         kws.append(short)
                 break
         kws += ["Homo sapiens", "NCBITaxon:9606", "HuBMAP"]
-        LOGGER.info(f"KEYWORDS: {pformat(kws)}")
+        LOGGER.debug(f"KEYWORDS for {self['hubmap_id']}:\n{pformat(kws)}")
         return kws

@@ -60,6 +60,8 @@ DEFAULT_INGEST_PIPELINE_URL = "https://github.com/hubmapconsortium/ingest-pipeli
 #   hard-coded the CWL version, but ours is actually modified- the CWL language
 #   definition entity should point at ours rather than at default CWL.
 # - the workflow_instance lacks start and end dates
+# - "homo sapiens" is hard-coded into the keywords.  That will have to be
+#   fixed for SenNet.
 # - unpublished examples:
 #   TARGET_ID = "HBM567.VCBK.562"
 #   TARGET_ID = "HBM487.HJZB.546"  # primary dataset
@@ -565,6 +567,10 @@ def main() -> None:
     ds_version = ds_entity.count_versions()
     crate.root_dataset["version"] = ds_version
     wrapped_croissant.version = ds_version
+
+    if kwds := ds_entity.keywords():
+        crate.root_dataset["keywords"] = kwds
+        wrapped_croissant.keywords = kwds
 
     if contributors := ds_entity.get("contributors"):
         crate.add(build_pi_entity(crate))

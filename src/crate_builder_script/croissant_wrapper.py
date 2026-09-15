@@ -297,6 +297,7 @@ class CroissantWrapper:
         self.date_published = None
         self.license = None
         self.version = None
+        self.keywords = None
 
     def add_file(self, ds_uuid: str, file_info: dict, file_blk: dict | None) -> None:
         """Define and describe a single file in the dataset."""
@@ -345,8 +346,8 @@ class CroissantWrapper:
             args["version"] = self.version
         if self.cite_as_doi:
             args["cite_as"] = _build_citation(entity, self.cite_as_doi)
-        if kwds := entity.keywords():
-            args["keywords"] = kwds
+        if self.keywords:
+            args["keywords"] = self.keywords
         croissant_meta = mlc.Metadata(**args).to_json()
         croissant_meta["@context"].update(
             {
