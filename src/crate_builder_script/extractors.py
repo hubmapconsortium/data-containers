@@ -11,13 +11,20 @@ LOGGER = logging.getLogger(__name__)
 
 # HuBMAP two-letter organ codes -> (label, UBERON term)
 ORGAN_MAP = {
-    "LY": ("Lymph Node", "UBERON:0000029"), "SP": ("Spleen", "UBERON:0002106"),
-    "TH": ("Thymus", "UBERON:0002370"), "BM": ("Bone Marrow", "UBERON:0002371"),
-    "LK": ("Kidney (left)", "UBERON:0004538"), "RK": ("Kidney (right)", "UBERON:0004539"),
-    "HT": ("Heart", "UBERON:0000948"), "LI": ("Large Intestine", "UBERON:0000059"),
-    "SI": ("Small Intestine", "UBERON:0002108"), "LL": ("Lung (left)", "UBERON:0002168"),
-    "RL": ("Lung (right)", "UBERON:0002167"), "LV": ("Liver", "UBERON:0002107"),
-    "PA": ("Pancreas", "UBERON:0001264"), "BL": ("Bladder", "UBERON:0001255"),
+    "LY": ("Lymph Node", "UBERON:0000029"),
+    "SP": ("Spleen", "UBERON:0002106"),
+    "TH": ("Thymus", "UBERON:0002370"),
+    "BM": ("Bone Marrow", "UBERON:0002371"),
+    "LK": ("Kidney (left)", "UBERON:0004538"),
+    "RK": ("Kidney (right)", "UBERON:0004539"),
+    "HT": ("Heart", "UBERON:0000948"),
+    "LI": ("Large Intestine", "UBERON:0000059"),
+    "SI": ("Small Intestine", "UBERON:0002108"),
+    "LL": ("Lung (left)", "UBERON:0002168"),
+    "RL": ("Lung (right)", "UBERON:0002167"),
+    "LV": ("Liver", "UBERON:0002107"),
+    "PA": ("Pancreas", "UBERON:0001264"),
+    "BL": ("Bladder", "UBERON:0001255"),
     "SK": ("Skin", "UBERON:0002097"),
     "LF": ("Fallopian tube (left)", "UBERON:0001303"),
     "RF": ("Fallopian tube (right)", "UBERON:0001302"),
@@ -192,7 +199,11 @@ class WrappedEntity:
         rslt = []
         for anc in ancs:
             md = anc.get("metadata", {})
-            for v in [anc.get("dataset_type"), md.get("assay_category"), md.get("analyte_class")]:
+            for v in [
+                anc.get("dataset_type"),
+                md.get("assay_category"),
+                md.get("analyte_class"),
+            ]:
                 if v and v not in rslt:
                     rslt.append(v)
         return rslt
@@ -212,7 +223,11 @@ class WrappedEntity:
             if rui:
                 r = json.loads(rui) if isinstance(rui, str) else rui
                 for term in r.get("ccf_annotations", []) or []:
-                    short = "UBERON:" + term.rsplit("_", 1)[-1] if "UBERON" in term else term
+                    short = (
+                        "UBERON:" + term.rsplit("_", 1)[-1]
+                        if "UBERON" in term
+                        else term
+                    )
                     if short not in kws:
                         kws.append(short)
                 break
