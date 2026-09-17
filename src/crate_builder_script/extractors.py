@@ -1,5 +1,6 @@
 """Define utilities to extract relevant subsets of entity data."""
 
+import json
 import logging
 from collections.abc import Callable
 from pprint import pformat
@@ -209,7 +210,7 @@ class WrappedEntity:
         return rslt
 
     def keywords(self) -> list[str]:
-        """Return a list of keywords appropriate to the dataset"""
+        """Return a list of keywords appropriate to the dataset."""
         kws: list[str] = []
         ancs = self.list_ancestors()
         kws.extend(self._assay_info_kwds(ancs))
