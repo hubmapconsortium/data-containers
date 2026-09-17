@@ -65,7 +65,8 @@ def _creators(entity: dict) -> list[dict]:
     out = []
     for c in entity.get("contributors", []):
         name = (
-            c.get("name") or f"{c.get('first_name','')} {c.get('last_name','')}".strip()
+            c.get("name")
+            or f"{c.get('first_name', '')} {c.get('last_name', '')}".strip()
         )
         if not name:
             continue
