@@ -19,6 +19,20 @@ HUBMAP = "https://hubmapconsortium.org/"
 
 HUBMAP_ORG_ENTITY = HUBMAP  # for lack of a better choice
 
+ENTITY_BASE = "https://portal.hubmapconsortium.org/browse/"
+
+HUBMAP_ORG_ENTITY = HUBMAP  # for lack of a better choice
+
+
+def entity_iri(entity: Any) -> str:
+    """A resolvable IRI for a HuBMAP entity (dataset / sample / donor).
+
+    Raw datasets and multi-assay splits carry `doi_url`; processed datasets, samples
+    and donors do not, and fall back to the portal browse URL, which resolves by
+    HuBMAP ID for every entity type.
+    """
+    return entity.get("doi_url") or ENTITY_BASE + (entity.get("hubmap_id") or "")
+
 
 @lru_cache(maxsize=8)
 def fetch_entity_info(target_id: str) -> dict[str, Any]:

@@ -6,7 +6,7 @@ from pathlib import Path
 from pprint import pformat
 
 import mlcroissant as mlc
-from api_calls import HUBMAP, asset_url, fetch_entity_info
+from api_calls import asset_url, entity_iri, fetch_entity_info
 from extractors import WrappedEntity
 
 LOGGER = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ def _specimen_chain(entity: WrappedEntity) -> dict:
     def node(anc):
         n = {
             "@type": "prov:Entity",
-            "@id": HUBMAP + anc.get("hubmap_id", ""),
+            "@id": entity_iri(anc),
             "schema:name": anc.get("hubmap_id"),
             "hubmap:entityType": anc.get("entity_type"),
             "hubmap:sampleCategory": anc.get("sample_category"),
@@ -219,7 +219,7 @@ def _pipeline_activity(entity: WrappedEntity) -> dict:
 def _build_raw_node(raw_entity: WrappedEntity, raw_md: dict | None) -> dict:
     return {
         "@type": "prov:Entity",
-        "@id": HUBMAP + (raw_entity.get("hubmap_id") or ""),
+        "@id": entity_iri(raw_entity),
         "schema:name": raw_entity.get("hubmap_id"),
         "hubmap:datasetType": raw_entity.get("dataset_type"),
         "prov:wasGeneratedBy": _acquisition_activity(raw_entity, raw_md or {}),
@@ -262,7 +262,7 @@ def build_embedded_provenance(
         provo["hubmap:hasProcessedDataset"] = [
             {
                 "@type": "prov:Entity",
-                "@id": HUBMAP + d.get("hubmap_id", ""),
+                "@id": entity_iri(d),
                 "schema:name": d.get("hubmap_id"),
                 "hubmap:datasetType": d.get("dataset_type"),
             }
