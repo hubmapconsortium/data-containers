@@ -25,7 +25,7 @@ HUBMAP_ORG_ENTITY = HUBMAP  # for lack of a better choice
 
 
 def entity_iri(entity: Any) -> str:
-    """A resolvable IRI for a HuBMAP entity (dataset / sample / donor).
+    """Return a resolvable IRI for a HuBMAP entity (dataset / sample / donor).
 
     Raw datasets and multi-assay splits carry `doi_url`; processed datasets, samples
     and donors do not, and fall back to the portal browse URL, which resolves by
