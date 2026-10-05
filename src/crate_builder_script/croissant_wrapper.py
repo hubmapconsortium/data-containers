@@ -1,6 +1,7 @@
 """Provides functions to build the Croissant file."""
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from pprint import pformat
@@ -8,8 +9,11 @@ from pprint import pformat
 import mlcroissant as mlc
 from api_calls import asset_url, entity_iri, fetch_entity_info
 from extractors import WrappedEntity
+from utils import get_sha256_from_url
 
 LOGGER = logging.getLogger(__name__)
+
+ANNDATA_ZARR_RE = re.compile(r"anndata-zarr/.*anndata.zarr/.zgroup")
 
 EDAM_INFO = {
     ("EDAM_1.24.format_3727", None): {"desc": "tiff", "mime": "image/tiff"},
@@ -42,6 +46,11 @@ EDAM_INFO = {
         "mime": "text/tab-separated-values",
     },
     (None, ".csv"): {"desc": "unknown but csv encoded", "mime": "text/csv"},
+    ("EDAM_1.24.format_2333", ""): {
+        # this entry covers the .zgroup entry at the top of a Zarr dir
+        "desc": "Zarr root file",
+        "mime": "application/json",
+    },
     ("EDAM_1.24.format_2333", None): {
         "desc": "binary format",
         "mime": "application/octet-stream",
@@ -51,6 +60,24 @@ EDAM_INFO = {
         "mime": "text/x-bed",
     },
 }
+
+
+def rel_path_to_id(rel_path: str) -> str:
+    return rel_path
+
+
+def detect_fileset_root(rel_path: str) -> dict | None:
+    """If rel_path is a fileset root, return appropriate FileSet args"""
+    if ANNDATA_ZARR_RE.match(rel_path):
+        anchor_id = rel_path_to_id(rel_path)
+        return {
+            "id": f"anndata-zarr-dir-{anchor_id}",
+            "name": f"anndata_zarr_directory-{anchor_id}",
+            "contained_in": [anchor_id],
+            "includes": "../**/*", 
+            "encoding_formats": ["application/x-zarr"]
+        }
+    return None
 
 
 def _ts_to_iso(ms):
@@ -301,19 +328,23 @@ class CroissantWrapper:
         self.keywords = None
 
     def add_file(self, ds_uuid: str, file_info: dict, file_blk: dict | None) -> None:
-        """Define and describe a single file in the dataset."""
+        """
+        Define and describe a single file in the dataset.
+        """
         args = {
-            "id": file_info["rel_path"],
+            "id": rel_path_to_id(file_info["rel_path"]),
             "name": file_info["rel_path"],
             "description": file_info["description"],
             "content_url": asset_url(ds_uuid, file_info["rel_path"]),
         }
+
         path_ext = Path(file_info["rel_path"]).suffix
+        LOGGER.info(f"EDAM lookup {file_info.get('edam_term')} <{path_ext}>")
         if edam := file_info.get("edam_term"):
-            if (edam, None) in EDAM_INFO:
-                args["encoding_formats"] = [EDAM_INFO[(edam, None)]["mime"]]
-            elif (edam, path_ext) in EDAM_INFO:
+            if (edam, path_ext) in EDAM_INFO:
                 args["encoding_formats"] = [EDAM_INFO[(edam, path_ext)]["mime"]]
+            elif (edam, None) in EDAM_INFO:
+                args["encoding_formats"] = [EDAM_INFO[(edam, None)]["mime"]]
             elif (None, path_ext) in EDAM_INFO:
                 args["encoding_formats"] = [EDAM_INFO[(None, path_ext)]["mime"]]
             else:
@@ -323,7 +354,18 @@ class CroissantWrapper:
             args["encoding_formats"] = ["application/octet-stream"]
         if file_blk:
             args["sha256"] = file_blk["sha256_checksum"]
+        else:
+            args["sha256"] = get_sha256_from_url(args["content_url"])
+        LOGGER.info(f"HELLO {file_info['rel_path']} info:\n{pformat(args)}")
+        LOGGER.info(f"file_info is:\n{pformat(file_info)}")
         self.file_objects.append(mlc.FileObject(**args))
+
+
+    def add_fileset_from_root(self, fileset_args: dict) -> None:
+        """
+        Add a fileset.
+        """
+        self.file_objects.append(mlc.FileSet(**fileset_args))
 
     # def add_record_set(self, record_set: mlc.RecordSet):
     #     self.record_sets.append(record_set)

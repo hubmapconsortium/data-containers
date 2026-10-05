@@ -4,6 +4,7 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 from pprint import pformat
 from tempfile import TemporaryDirectory
 from typing import List
@@ -14,7 +15,7 @@ from api_calls import (
     fetch_entity_info,
     fetch_uuid_files_info,
 )
-from croissant_wrapper import CroissantWrapper
+from croissant_wrapper import CroissantWrapper, detect_fileset_root
 from extractors import WrappedEntity
 from rocrate.model import (
     ComputerLanguage,
@@ -522,6 +523,7 @@ def main() -> None:
     blk_idx = {}
     for file_blk in uuid_files:
         blk_idx[file_blk["path"]] = file_blk
+    LOGGER.info(f"blk_idx is:\n{pformat(blk_idx, depth=1)}")
 
     # The dataset DOIs point to the Portal, which is basically a landing page, which is
     # forbidden as the direct link for a dataset under FAIR.  So we can't use the DOI
@@ -586,10 +588,12 @@ def main() -> None:
     if "files" in ds_entity:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_entity["files"]:
+            fileset_args = detect_fileset_root(fl["rel_path"])
             if (
                 fl.get("is_data_product", False)
                 or fl.get("is_qa_qc", False)
                 or include_all_files
+                or fileset_args
             ):
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
@@ -598,6 +602,8 @@ def main() -> None:
                 wrapped_croissant.add_file(
                     ds_entity["uuid"], fl, blk_idx.get(fl["rel_path"])
                 )
+                if fileset_args:
+                    wrapped_croissant.add_fileset_from_root(fileset_args)
             else:
                 LOGGER.debug(f"{fl['rel_path']} is not a data product or qa_qc")
     else:
