@@ -15,7 +15,7 @@ from api_calls import (
     fetch_entity_info,
     fetch_uuid_files_info,
 )
-from croissant_wrapper import CroissantWrapper, detect_fileset_root
+from croissant_wrapper import CroissantWrapper, detect_recordset_root
 from extractors import WrappedEntity
 from rocrate.model import (
     ComputerLanguage,
@@ -588,12 +588,12 @@ def main() -> None:
     if "files" in ds_entity:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_entity["files"]:
-            fileset_args = detect_fileset_root(fl["rel_path"])
+            recordset_args = detect_recordset_root(fl["rel_path"])
             if (
                 fl.get("is_data_product", False)
                 or fl.get("is_qa_qc", False)
                 or include_all_files
-                or fileset_args
+                or recordset_args
             ):
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
@@ -602,8 +602,8 @@ def main() -> None:
                 wrapped_croissant.add_file(
                     ds_entity["uuid"], fl, blk_idx.get(fl["rel_path"])
                 )
-                if fileset_args:
-                    wrapped_croissant.add_fileset_from_root(fileset_args)
+                if recordset_args:
+                    wrapped_croissant.add_recordset_from_root(recordset_args)
             else:
                 LOGGER.debug(f"{fl['rel_path']} is not a data product or qa_qc")
     else:

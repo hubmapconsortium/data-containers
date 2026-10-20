@@ -1,4 +1,5 @@
 """Provides functions to build the Croissant file."""
+import copy
 import json
 import logging
 import re
@@ -13,7 +14,7 @@ from utils import get_sha256_from_url
 
 LOGGER = logging.getLogger(__name__)
 
-ANNDATA_ZARR_RE = re.compile(r"anndata-zarr/.*anndata.zarr/.zgroup")
+ANNDATA_ZARR_RE = re.compile(r"(anndata-zarr/.*anndata.zarr)(/.zgroup)")
 
 EDAM_INFO = {
     ("EDAM_1.24.format_3727", None): {"desc": "tiff", "mime": "image/tiff"},
@@ -61,23 +62,77 @@ EDAM_INFO = {
     },
 }
 
+FILESET_KEYWORDS = ["id", "name", "contained_in", "includes", "encoding_formats"]
 
-def rel_path_to_id(rel_path: str) -> str:
-    return rel_path
+RECORDSET_KEYWORDS = ["id", "name", "description", "fields"]
+
+def _anndata_zarr_fs_func(fs_info: dict) -> dict:
+    rslt = {key: fs_info[key] for key in FILESET_KEYWORDS}
+    LOGGER.info(f"_anndata_zarr_fs_func returning:\n{pformat(rslt)}")
+    return rslt
+
+def _anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
+    id_base = rs_info["id"]
+    field_list = [
+        {
+            "id": f"{id_base}/cells/cell-id",
+            "name": "cell_id",
+            "data_types": [mlc.DataType.TEXT],
+            "source": mlc.Source(
+                file_set=id_base,
+                extract=mlc.Extract(json_path="$.obs.ID")
+            )
+        },
+        {
+            "id": f"{id_base}/cells/expression-vector",
+            "name": "expression",
+            "data_types": [mlc.DataType.FLOAT],
+            "source": mlc.Source(
+                file_set=id_base,
+                extract=mlc.Extract(json_path="$.X")
+            )
+        },
+        {
+            "id": f"{id_base}/cells/cell-k-means-mean-expression",
+            "name": "cell-k-means-mean-expression",
+            "data_types": [mlc.DataType.FLOAT],
+            "source": mlc.Source(
+                file_set=id_base,
+                extract=mlc.Extract(json_path="$.obs.'Cell K-Means [Mean] Expression'")
+            )
+        },
+    ]
+    field_list = [mlc.Field(**elt) for elt in field_list]  # convert to fields
+    rslt = {
+        "id": f"{id_base}/cells-recordset",
+        "name": "cells-recordset",
+        "description": "individual cells data",
+        "fields": field_list
+    }
+    LOGGER.info(f"_anndata_zarr_rs_func returning:\n{pformat(rslt)}")
+    return [rslt]
 
 
-def detect_fileset_root(rel_path: str) -> dict | None:
-    """If rel_path is a fileset root, return appropriate FileSet args"""
-    if ANNDATA_ZARR_RE.match(rel_path):
-        anchor_id = rel_path_to_id(rel_path)
+def detect_recordset_root(rel_path: str) -> dict | None:
+    """If rel_path is a fileset root, return appropriate RecordSet info"""
+    if re_match := ANNDATA_ZARR_RE.match(rel_path):
+        # Information which directly describes the FileSet and can
+        # be used to derive the RecordSets
+        anchor_id = rel_path_to_id(re_match.group(1))
         return {
             "id": f"anndata-zarr-dir-{anchor_id}",
             "name": f"anndata_zarr_directory-{anchor_id}",
-            "contained_in": [anchor_id],
+            "contained_in": [rel_path_to_id(rel_path)],
             "includes": "../**/*", 
-            "encoding_formats": ["application/x-zarr"]
+            "encoding_formats": ["application/x-zarr"],
+            "fileset_func": _anndata_zarr_fs_func,
+            "recordset_func": _anndata_zarr_rs_func
         }
     return None
+
+
+def rel_path_to_id(rel_path: str) -> str:
+    return rel_path
 
 
 def _ts_to_iso(ms):
@@ -360,15 +415,26 @@ class CroissantWrapper:
         LOGGER.info(f"file_info is:\n{pformat(file_info)}")
         self.file_objects.append(mlc.FileObject(**args))
 
-
-    def add_fileset_from_root(self, fileset_args: dict) -> None:
+    def add_recordset_from_root(self, rs_info: dict) -> None:
         """
-        Add a fileset.
+        Add one or more recordsets, and a fileset if necessary.
+        
+        rs_info is a dict returned by detect_recordset_root().
         """
-        self.file_objects.append(mlc.FileSet(**fileset_args))
+        if fileset_func := rs_info.get("fileset_func"):
+            self._add_fileset(fileset_func(rs_info))
+        if recordset_func := rs_info.get("recordset_func"):
+            rs_info_list = recordset_func(rs_info)
+            for rs_info in rs_info_list:
+                self._add_recordset(rs_info)
 
-    # def add_record_set(self, record_set: mlc.RecordSet):
-    #     self.record_sets.append(record_set)
+    def _add_fileset(self, fs_info: dict) -> None:
+        """Add a FileSet using info returned by detect_recordset_root()."""
+        self.file_objects.append(mlc.FileSet(**fs_info))
+
+    def _add_recordset(self, rs_info: dict) -> None:
+        """Add a RecordSet."""
+        self.record_sets.append(mlc.RecordSet(**rs_info))
 
     def write(self, croissant_filename: str):
         """Write the Croissant file."""
