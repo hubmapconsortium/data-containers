@@ -588,7 +588,7 @@ def main() -> None:
     if "files" in ds_entity:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_entity["files"]:
-            recordset_args = detect_recordset_root(fl["rel_path"])
+            recordset_args = detect_recordset_root(ds_entity["uuid"], fl["rel_path"])
             if (
                 fl.get("is_data_product", False)
                 or fl.get("is_qa_qc", False)

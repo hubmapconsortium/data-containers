@@ -8,6 +8,7 @@ from pathlib import Path
 from pprint import pformat
 
 import mlcroissant as mlc
+import zarr
 from api_calls import asset_url, entity_iri, fetch_entity_info
 from extractors import WrappedEntity
 from utils import get_sha256_from_url
@@ -73,6 +74,8 @@ def _anndata_zarr_fs_func(fs_info: dict) -> dict:
 
 def _anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     id_base = rs_info["id"]
+    obs_cols = rs_info.get("obs_columns")
+    print(f"POINT 3: obs_cols {obs_cols}")
     field_list = [
         {
             "id": f"{id_base}/cells/cell-id",
@@ -80,7 +83,7 @@ def _anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
             "data_types": [mlc.DataType.TEXT],
             "source": mlc.Source(
                 file_set=id_base,
-                extract=mlc.Extract(json_path="$.obs.ID")
+                extract=mlc.Extract(json_path="$.obs.index")
             )
         },
         {
@@ -113,12 +116,25 @@ def _anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     return [rslt]
 
 
-def detect_recordset_root(rel_path: str) -> dict | None:
+def detect_recordset_root(ds_uuid: str, rel_path: str) -> dict | None:
     """If rel_path is a fileset root, return appropriate RecordSet info"""
     if re_match := ANNDATA_ZARR_RE.match(rel_path):
         # Information which directly describes the FileSet and can
         # be used to derive the RecordSets
         anchor_id = rel_path_to_id(re_match.group(1))
+        zarr_url = asset_url(ds_uuid, anchor_id)
+        print(f"POINT 1: zarr_url = {zarr_url}")
+        import os
+        from anndata.io import read_elem
+        auth_tok = os.environ["AUTH_TOK"]
+        zarr_obs_store = zarr.open(zarr_url, mode="r", use_consolidated=False,
+                               zarr_format=2, path="obs",
+                               storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}})
+        zarr_elem = read_elem(zarr_obs_store)
+        print(f"POINT 1b: {zarr_elem.columns}")
+        print(f"POINT 1c: {list(zarr_elem.columns)}"),
+        obs_cols = list(zarr_elem.columns)
+        print(f"POINT 2: cols {obs_cols}")
         return {
             "id": f"anndata-zarr-dir-{anchor_id}",
             "name": f"anndata_zarr_directory-{anchor_id}",
@@ -126,7 +142,8 @@ def detect_recordset_root(rel_path: str) -> dict | None:
             "includes": "../**/*", 
             "encoding_formats": ["application/x-zarr"],
             "fileset_func": _anndata_zarr_fs_func,
-            "recordset_func": _anndata_zarr_rs_func
+            "recordset_func": _anndata_zarr_rs_func,
+            "obs_columns": obs_cols
         }
     return None
 
@@ -411,7 +428,7 @@ class CroissantWrapper:
             args["sha256"] = file_blk["sha256_checksum"]
         else:
             args["sha256"] = get_sha256_from_url(args["content_url"])
-        LOGGER.info(f"HELLO {file_info['rel_path']} info:\n{pformat(args)}")
+        LOGGER.info(f"args for {file_info['rel_path']} info:\n{pformat(args)}")
         LOGGER.info(f"file_info is:\n{pformat(file_info)}")
         self.file_objects.append(mlc.FileObject(**args))
 
