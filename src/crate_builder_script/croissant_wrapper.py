@@ -11,145 +11,21 @@ import mlcroissant as mlc
 import zarr
 from api_calls import asset_url, entity_iri, fetch_entity_info
 from extractors import WrappedEntity
-from utils import get_sha256_from_url
+from utils import (
+    get_sha256_from_url,
+    rel_path_to_id,
+)
+from edam_tables import EDAM_INFO
+from anndata_zarr_tools import anndata_zarr_detector
 
 LOGGER = logging.getLogger(__name__)
-
-ANNDATA_ZARR_RE = re.compile(r"(anndata-zarr/.*anndata.zarr)(/.zgroup)")
-
-EDAM_INFO = {
-    ("EDAM_1.24.format_3727", None): {"desc": "tiff", "mime": "image/tiff"},
-    ("EDAM_1.24.format_3464", None): {"desc": "json", "mime": "application/json"},
-    ("EDAM_1.24.format_3508", None): {"desc": "pdf", "mime": "application/pdf"},
-    ("EDAM_1.24.format_3590", None): {"desc": "hdf5", "mime": "application/x-hdf5"},
-    ("EDAM_1.24.format_3987", None): {"desc": "zip", "mime": "application/zip"},
-    ("EDAM_1.24.format_3752", None): {"desc": "csv", "mime": "text/csv"},
-    ("EDAM_1.24.format_3755", None): {
-        "desc": "tsv",
-        "mime": "text/tab-separated-values",
-    },
-    ("EDAM_1.24.format_3790", None): {
-        "desc": "h5ad (anndata)",
-        "mime": "application/x-hdf5",
-    },
-    ("EDAM_1.24.format_3915", None): {"desc": "zarr", "mime": "application/vnd.zarr"},
-    ("EDAM_1.24.format_4006", None): {
-        "desc": "zarr (spatialdata)",
-        "mime": "application/vnd.zarr",
-    },
-    ("EDAM_1.24.data_3671", None): {"desc": "plain text", "mime": "text/plain"},
-    ("EDAM_1.24.format_3916", ".mtx"): {
-        "desc": "adjacency matrix",
-        "mime": "text/plain",
-    },
-    (None, ".html"): {"desc": "unknown but html encoded", "mime": "text/html"},
-    (None, ".tsv"): {
-        "desc": "unknown but tsv encoded",
-        "mime": "text/tab-separated-values",
-    },
-    (None, ".csv"): {"desc": "unknown but csv encoded", "mime": "text/csv"},
-    ("EDAM_1.24.format_2333", ""): {
-        # this entry covers the .zgroup entry at the top of a Zarr dir
-        "desc": "Zarr root file",
-        "mime": "application/json",
-    },
-    ("EDAM_1.24.format_2333", None): {
-        "desc": "binary format",
-        "mime": "application/octet-stream",
-    },
-    ("EDAM_1.24.format_3003", None): {
-        "desc": "BED (Browser Extensible Data)",
-        "mime": "text/x-bed",
-    },
-}
-
-FILESET_KEYWORDS = ["id", "name", "contained_in", "includes", "encoding_formats"]
-
-RECORDSET_KEYWORDS = ["id", "name", "description", "fields"]
-
-def _anndata_zarr_fs_func(fs_info: dict) -> dict:
-    rslt = {key: fs_info[key] for key in FILESET_KEYWORDS}
-    LOGGER.info(f"_anndata_zarr_fs_func returning:\n{pformat(rslt)}")
-    return rslt
-
-def _anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
-    id_base = rs_info["id"]
-    obs_cols = rs_info.get("obs_columns")
-    print(f"POINT 3: obs_cols {obs_cols}")
-    field_list = [
-        {
-            "id": f"{id_base}/cells/cell-id",
-            "name": "cell_id",
-            "data_types": [mlc.DataType.TEXT],
-            "source": mlc.Source(
-                file_set=id_base,
-                extract=mlc.Extract(json_path="$.obs.index")
-            )
-        },
-        {
-            "id": f"{id_base}/cells/expression-vector",
-            "name": "expression",
-            "data_types": [mlc.DataType.FLOAT],
-            "source": mlc.Source(
-                file_set=id_base,
-                extract=mlc.Extract(json_path="$.X")
-            )
-        },
-        {
-            "id": f"{id_base}/cells/cell-k-means-mean-expression",
-            "name": "cell-k-means-mean-expression",
-            "data_types": [mlc.DataType.FLOAT],
-            "source": mlc.Source(
-                file_set=id_base,
-                extract=mlc.Extract(json_path="$.obs.'Cell K-Means [Mean] Expression'")
-            )
-        },
-    ]
-    field_list = [mlc.Field(**elt) for elt in field_list]  # convert to fields
-    rslt = {
-        "id": f"{id_base}/cells-recordset",
-        "name": "cells-recordset",
-        "description": "individual cells data",
-        "fields": field_list
-    }
-    LOGGER.info(f"_anndata_zarr_rs_func returning:\n{pformat(rslt)}")
-    return [rslt]
 
 
 def detect_recordset_root(ds_uuid: str, rel_path: str) -> dict | None:
     """If rel_path is a fileset root, return appropriate RecordSet info"""
-    if re_match := ANNDATA_ZARR_RE.match(rel_path):
-        # Information which directly describes the FileSet and can
-        # be used to derive the RecordSets
-        anchor_id = rel_path_to_id(re_match.group(1))
-        zarr_url = asset_url(ds_uuid, anchor_id)
-        print(f"POINT 1: zarr_url = {zarr_url}")
-        import os
-        from anndata.io import read_elem
-        auth_tok = os.environ["AUTH_TOK"]
-        zarr_obs_store = zarr.open(zarr_url, mode="r", use_consolidated=False,
-                               zarr_format=2, path="obs",
-                               storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}})
-        zarr_elem = read_elem(zarr_obs_store)
-        print(f"POINT 1b: {zarr_elem.columns}")
-        print(f"POINT 1c: {list(zarr_elem.columns)}"),
-        obs_cols = list(zarr_elem.columns)
-        print(f"POINT 2: cols {obs_cols}")
-        return {
-            "id": f"anndata-zarr-dir-{anchor_id}",
-            "name": f"anndata_zarr_directory-{anchor_id}",
-            "contained_in": [rel_path_to_id(rel_path)],
-            "includes": "../**/*", 
-            "encoding_formats": ["application/x-zarr"],
-            "fileset_func": _anndata_zarr_fs_func,
-            "recordset_func": _anndata_zarr_rs_func,
-            "obs_columns": obs_cols
-        }
+    if rslt := anndata_zarr_detector(ds_uuid, rel_path):
+        return rslt
     return None
-
-
-def rel_path_to_id(rel_path: str) -> str:
-    return rel_path
 
 
 def _ts_to_iso(ms):

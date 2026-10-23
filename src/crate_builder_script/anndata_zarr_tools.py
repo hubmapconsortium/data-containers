@@ -11,7 +11,11 @@ import mlcroissant as mlc
 import zarr
 from api_calls import asset_url, entity_iri, fetch_entity_info
 from extractors import WrappedEntity
-from utils import get_sha256_from_url, FILESET_KEYWORDS, RECORDSET_KEYWORDS
+from utils import (
+    get_sha256_from_url,
+    rel_path_to_id,
+    FILESET_KEYWORDS, RECORDSET_KEYWORDS
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -66,7 +70,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     return [rslt]
 
 
-def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None
+def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
     """If rel_path is an anndata_zarr root, return appropriate RecordSet info"""
     if re_match := ANNDATA_ZARR_RE.match(rel_path):
         # Information which directly describes the FileSet and can

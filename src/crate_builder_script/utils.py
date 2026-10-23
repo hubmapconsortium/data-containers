@@ -2,6 +2,15 @@
 import hashlib
 import requests
 
+FILESET_KEYWORDS = ["id", "name", "contained_in", "includes", "encoding_formats"]
+
+RECORDSET_KEYWORDS = ["id", "name", "description", "fields"]
+
+
+def rel_path_to_id(rel_path: str) -> str:
+    return rel_path
+
+
 def get_sha256_from_url(url: str, chunk_size : int =16384) -> str:
     """
     Given a file URL, return the sha256 of the file.
