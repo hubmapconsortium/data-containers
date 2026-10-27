@@ -1,10 +1,6 @@
 """Provides functions to build the Croissant file."""
-import copy
-import json
 import logging
 import re
-from datetime import datetime, timezone
-from pathlib import Path
 from pprint import pformat
 import os
 
@@ -12,13 +8,10 @@ from anndata.io import read_elem
 import mlcroissant as mlc
 import zarr
 import pandas as pd
-import numpy as np
-from api_calls import asset_url, entity_iri, fetch_entity_info
-from extractors import WrappedEntity
+from api_calls import asset_url
 from utils import (
-    get_sha256_from_url,
     rel_path_to_id,
-    FILESET_KEYWORDS, RECORDSET_KEYWORDS
+    FILESET_KEYWORDS
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -43,24 +36,48 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     obs_dtypes = rs_info.get("obs_dtypes", {})
     var_index = rs_info.get("var_index", {})
     X_shape = rs_info.get("X_shape", (-1, -1))
-    print(f"TEST2a: {obs_dtypes}")
-    print(f"TEST2b: {var_index}")
-    print(f"TEST2c: {X_shape}")
 
-    # These first two fields are always present
+    # Build the row index RecordSet
+    row_field = mlc.Field(
+        id=f"{id_base}/cells/cell-id",
+        name="cell_id",
+        data_types=[mlc.DataType.TEXT],
+        source=mlc.Source(
+            file_set=id_base,
+            extract=mlc.Extract(json_path="$.obs.index")
+        )
+    )
+    field_list = [row_field]
+    row_index_rs = {
+        "id": f"{id_base}/cell-id-index",
+        "name": "cell-id-index",
+        "description": "individual cell ids",
+        "fields": field_list
+    }
+
+    # Build the column index RecordSet
+    col_field = mlc.Field(
+        id=f"{id_base}/cells/channel-id",
+        name="channel_id",
+        data_types=[mlc.DataType.TEXT],
+        source=mlc.Source(
+            file_set=id_base,
+            extract=mlc.Extract(json_path="$.var.index")
+        )
+    )
+    field_list = [col_field]
+    col_index_rs = {
+        "id": f"{id_base}/channel-index",
+        "name": "cell-index",
+        "description": "individual channel ids",
+        "fields": field_list
+    }
+
+    # Build the RecordSet for X, referencing the indices
     field_list = [
         {
-            "id": f"{id_base}/cells/cell-id",
-            "name": "cell_id",
-            "data_types": [mlc.DataType.TEXT],
-            "source": mlc.Source(
-                file_set=id_base,
-                extract=mlc.Extract(json_path="$.obs.index")
-            )
-        },
-        {
-            "id": f"{id_base}/cells/expression-vector",
-            "name": "expression",
+            "id": f"{id_base}/cells/expression-matrix",
+            "name": "expression-matrix",
             "data_types": [mlc.DataType.FLOAT],
             "is_array": True,
             "array_shape": f"{X_shape[0]},{X_shape[1]}",
@@ -69,9 +86,31 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
                 extract=mlc.Extract(json_path="$.X")
             )
         },
+        {
+            "id": f"{id_base}/cells/expression-rows",
+            "name": "expression-rows",
+            "description": "expression matrix row IDs",
+            "data_types": [mlc.DataType.TEXT],
+            "references": row_field
+        },
+        {
+            "id": f"{id_base}/cells/expression-columns",
+            "name": "expresion-columns",
+            "description": "expression matrix column IDs",
+            "data_types": [mlc.DataType.TEXT],
+            "references": col_field
+        }
     ]
+    field_list = [mlc.Field(**elt) for elt in field_list]  # convert to fields
+    X_rs = {
+        "id": f"{id_base}/expression-matrix",
+        "name": "expression-matrix",
+        "description": "expression data matrix",
+        "fields": field_list
+    }
 
-    # Add a field for each column in obs
+    # Guild the Record of fields representing the obs data
+    field_list = []
     for col, dtype in obs_dtypes.items():
         if cr_dtype := PANDAS_TO_CROISSANT_TYPES.get(str(dtype)):
             field_list.append({
@@ -85,16 +124,26 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
             })
         else:
             raise RuntimeError(f"zarr obs column {col} type {dtype} cannot be mapped to croissant")
-
+    field_list.append(
+        {
+            "id": f"{id_base}/cells/obs-rows",
+            "name": "obs-rows",
+            "description": "observation matrix row IDs",
+            "data_types": [mlc.DataType.TEXT],
+            "references": row_field
+        },
+    )
     field_list = [mlc.Field(**elt) for elt in field_list]  # convert to fields
-    rslt = {
-        "id": f"{id_base}/cells-recordset",
-        "name": "cells-recordset",
-        "description": "individual cells data",
+    obs_rs = {
+        "id": f"{id_base}/cells-obs",
+        "name": "cells-obs",
+        "description": "individual cells obs data",
         "fields": field_list
     }
+
+    rslt = [row_index_rs, col_index_rs, X_rs, obs_rs]
     LOGGER.info(f"_anndata_zarr_rs_func returning:\n{pformat(rslt)}")
-    return [rslt]
+    return rslt
 
 
 def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
@@ -104,7 +153,6 @@ def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
         # be used to derive the RecordSets
         anchor_id = rel_path_to_id(re_match.group(1))
         zarr_url = asset_url(ds_uuid, anchor_id)
-        print(f"POINT 1: zarr_url = {zarr_url}")
         auth_tok = os.environ["AUTH_TOK"]
         # We can't actually open the X store because it's too large
         # to work with here.  But we need its row and column counts
@@ -127,12 +175,9 @@ def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
                               storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}})
             elem = read_elem(store)
             if isinstance(elem, pd.DataFrame):
-                print(f"TEST {elt} {type(elem)} {len(elem)}")
                 if len(elem):
                     LOGGER.warning(f"AnnData Zarr element {elt} (a Dataframe)"
                                    " was detected but not translated")
-                    for idx, row in elem.iterrows():
-                        print(f"{idx} {type(row)} {row}")
             elif isinstance(elem, dict):
                 if elem:
                     LOGGER.warning(f"AnnData Zarr element {elt} (a dict)"
@@ -143,7 +188,6 @@ def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
 
         obs_dtypes = zarr_obs_elem.dtypes
         var_index = zarr_var_elem.index
-        print(f"TESTTEST: {zarr_obs_elem.shape[0]} {zarr_var_elem.shape[0]}")
         return {
             "id": f"anndata-zarr-dir-{anchor_id}",
             "name": f"anndata_zarr_directory-{anchor_id}",
