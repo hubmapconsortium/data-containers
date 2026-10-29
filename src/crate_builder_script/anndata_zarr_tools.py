@@ -1,13 +1,18 @@
 """Provides functions to build the Croissant file."""
 import logging
 import re
-from pprint import pformat
+from pprint import pformat, pprint
 import os
 import fsspec
+from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
+from fsspec.implementations.zip import ZipFileSystem
+import zipfile
+from collections.abc import MutableMapping
 
 from anndata.io import read_elem, read_zarr
 import mlcroissant as mlc
 import zarr
+from zarr.core.buffer.core import default_buffer_prototype
 import pandas as pd
 from api_calls import asset_url
 from utils import (
@@ -22,16 +27,77 @@ ANNDATA_ZARR_ZIP_RE = re.compile(r"(anndata-zarr/.*anndata.zarr.zip)")
 
 PANDAS_TO_CROISSANT_TYPES = {
     "int64": mlc.DataType.INTEGER,
+    "uint8": mlc.DataType.INTEGER,
     "float64": mlc.DataType.FLOAT,
     "bool": mlc.DataType.BOOL,
     "object": mlc.DataType.TEXT,
     "string": mlc.DataType.TEXT,
 }
 
+
+class MapperWrapper(MutableMapping):
+    """Controls for bad behavior of AnnData 0.12 with Zarr for remote zips."""
+    def __init__(self, mapper):
+        self.mapper = mapper
+
+    def __getitem__(self, key):
+        print(f"GETITEM {key}")
+        return self.mapper[key]
+
+    def __contains__(self, key):
+        return key in self.mapper
+
+    def __keys__(self):
+        print("KEYS called")
+        return self.mapper.keys()
+
+    def __setitem__(self, key, value):
+        self.mapper[key] = value
+
+    def __delitem__(self, key):
+        del self.mapper[key]
+
+    def __iter__(self):
+        print("ITER")
+        return iter(self.mapper)
+
+    def __len__(self):
+        print("LEN")
+        return len(self.mapper)
+
+
+#
+# Copied from hubmapconsortium/portal-visualization utils.py
+# many thanks to Nick Akhmetov
+#
+class SafeZipFileSystem(ZipFileSystem):
+    # zarr 3 treats FileNotFoundError as "key absent"; ZipFileSystem raises KeyError,
+    # which breaks zarr's probes for optional metadata files.
+    def _open(self, path, mode="rb", *args, **kwargs):
+        try:
+            return super()._open(path, mode, *args, **kwargs)
+        except KeyError as e:
+            raise FileNotFoundError(path) from e
+
+
+def open_zip_zarr_store(url, token=None):
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    fs = SafeZipFileSystem(
+        fo=url,
+        target_protocol="https",  # NOT remote_protocol/remote_options: silently ignored
+        target_options={"client_kwargs": {"headers": headers}},
+    )
+    # zarr 3's FsspecStore needs an async filesystem; ZipFileSystem is sync.
+    store = zarr.storage.FsspecStore(AsyncFileSystemWrapper(fs, asynchronous=True), read_only=True)
+    pprint(dir(store))
+    return store
+
+
 def anndata_zarr_fs_func(fs_info: dict) -> dict:
     rslt = {key: fs_info[key] for key in FILESET_KEYWORDS}
     LOGGER.info(f"_anndata_zarr_fs_func returning:\n{pformat(rslt)}")
     return rslt
+
 
 def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     id_base = rs_info["id"]
@@ -176,65 +242,50 @@ def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
                 storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}}
             )
             zarr_var_elem = read_elem(zarr_var_store)
+            # We have no examples of these, but they may be info we
+            # ultimately want to capture
+            for elt in ["varm", "varp", "obsm", "obsp", "uns"]:
+                store = zarr.open(zarr_url, mode="r", use_consolidated=False,
+                                path=elt,
+                                storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}})
+                elem = read_elem(store)
+                if isinstance(elem, pd.DataFrame):
+                    if len(elem):
+                        LOGGER.warning(f"AnnData Zarr element {elt} (a Dataframe)"
+                                    " was detected but not translated")
+                elif isinstance(elem, dict):
+                    if elem:
+                        LOGGER.warning(f"AnnData Zarr element {elt} (a dict)"
+                                    " was detected but not translated")
+                else:
+                    LOGGER.error(f"The AnnData Zarr element {elt} is unexpectedly"
+                                f" of type {type(elem)}")
         elif re_match_zip:
-            print(f"ZARR URL {zarr_url}")
-            fs = fsspec.filesystem(
-                "zip",
-                fo=zarr_url,
-                mode="r",
-                storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}}
-            )
-            all_files = fs.find("")
-            print("FILES")
-            for f in all_files[:15]:
-                print(f)
-            store_mapper = fs.get_mapper()
-            print(f"KEYS: {list(store_mapper.keys())}")
-            #root = zarr.open(store_mapper, mode="r", zarr_format=2)
-            store_obs_mapper = fs.get_mapper("obs")
-            print(f"POINT 0; obs keys: {list(store_obs_mapper.keys())}")
-            zarr_store = zarr.open_group(
-                store_mapper,
-                mode="r",
-                #zarr_format=2,
-                #use_consolidated=False
-                )
+            zarr_store = open_zip_zarr_store(zarr_url, token=auth_tok)
+            zarr_group = zarr.open_group(zarr_store, mode="r", use_consolidated=False)
+            zarr_obs_elem = read_elem(zarr_group["obs"])
+            zarr_var_elem = read_elem(zarr_group["var"])
+            # We have no examples of these, but they may be info we
+            # ultimately want to capture
+            for elt in ["varm", "varp", "obsm", "obsp", "uns"]:
+                if elt in zarr_group:
+                    elem = read_elem(zarr_group[elt])
+                    if isinstance(elem, pd.DataFrame):
+                        if len(elem):
+                            LOGGER.warning(f"AnnData Zarr element {elt} (a Dataframe)"
+                                        " was detected but not translated")
+                    elif isinstance(elem, dict):
+                        if elem:
+                            LOGGER.warning(f"AnnData Zarr element {elt} (a dict)"
+                                        " was detected but not translated")
+                    else:
+                        LOGGER.error(f"The AnnData Zarr element {elt} is unexpectedly"
+                                    f" of type {type(elem)}")
 
-            # zarr_obs_store = zarr.open_group(
-            #     store_obs_mapper,
-            #     mode="r",
-            #     zarr_format=2,
-            #     use_consolidated=False
-            #     )
-            print(f"POINT 1: {type(zarr_store)}")
-            #zarr_obs_elem = read_zarr(zarr_obs_store)
-            zarr_elem = read_zarr(zarr_store)
-            print("POINT 2")
-            #zarr_obs_elem = root["obs"]
-            #zarr_var_elem = root["var"]
         else:
             raise RuntimeError("Internal Error opening remote zarr")
         print(f"zarr_obs_elem {zarr_obs_elem}")
         print(f"zarr_var_elem {zarr_var_elem}")
-
-        # We have no examples of these, but they may be info we
-        # ultimately want to capture
-        for elt in ["varm", "varp", "obsm", "obsp", "uns"]:
-            store = zarr.open(zarr_url, mode="r", use_consolidated=False,
-                              path=elt,
-                              storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}})
-            elem = read_elem(store)
-            if isinstance(elem, pd.DataFrame):
-                if len(elem):
-                    LOGGER.warning(f"AnnData Zarr element {elt} (a Dataframe)"
-                                   " was detected but not translated")
-            elif isinstance(elem, dict):
-                if elem:
-                    LOGGER.warning(f"AnnData Zarr element {elt} (a dict)"
-                                   " was detected but not translated")
-            else:
-                LOGGER.error(f"The AnnData Zarr element {elt} is unexpectedly"
-                             f" of type {type(elem)}")
 
         obs_dtypes = zarr_obs_elem.dtypes
         var_index = zarr_var_elem.index
