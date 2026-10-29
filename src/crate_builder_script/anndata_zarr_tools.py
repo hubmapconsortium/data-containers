@@ -3,8 +3,9 @@ import logging
 import re
 from pprint import pformat
 import os
+import fsspec
 
-from anndata.io import read_elem
+from anndata.io import read_elem, read_zarr
 import mlcroissant as mlc
 import zarr
 import pandas as pd
@@ -17,6 +18,7 @@ from utils import (
 LOGGER = logging.getLogger(__name__)
 
 ANNDATA_ZARR_RE = re.compile(r"(anndata-zarr/.*anndata.zarr)(/.zgroup)")
+ANNDATA_ZARR_ZIP_RE = re.compile(r"(anndata-zarr/.*anndata.zarr.zip)")
 
 PANDAS_TO_CROISSANT_TYPES = {
     "int64": mlc.DataType.INTEGER,
@@ -148,24 +150,72 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
 
 def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
     """If rel_path is an anndata_zarr root, return appropriate RecordSet info"""
-    if re_match := ANNDATA_ZARR_RE.match(rel_path):
+    re_match_fs = ANNDATA_ZARR_RE.match(rel_path)
+    re_match_zip = ANNDATA_ZARR_ZIP_RE.match(rel_path)
+    re_match_any = re_match_fs or re_match_zip
+    if re_match_any:
         # Information which directly describes the FileSet and can
         # be used to derive the RecordSets
-        anchor_id = rel_path_to_id(re_match.group(1))
+        anchor_id = rel_path_to_id(re_match_any.group(1))
         zarr_url = asset_url(ds_uuid, anchor_id)
         auth_tok = os.environ["AUTH_TOK"]
         # We can't actually open the X store because it's too large
         # to work with here.  But we need its row and column counts
         # to specify the X array.  We will need to get them from the
         # obs and var stores.
-        zarr_obs_store = zarr.open(zarr_url, mode="r", use_consolidated=False,
-                               path="obs",
-                               storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}})
-        zarr_obs_elem = read_elem(zarr_obs_store)
-        zarr_var_store = zarr.open(zarr_url, mode="r", use_consolidated=False,
-                               path="var",
-                               storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}})
-        zarr_var_elem = read_elem(zarr_var_store)
+        if re_match_fs:
+            zarr_obs_store = zarr.open(
+                zarr_url, mode="r", use_consolidated=False,
+                path="obs",
+                storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}}
+            )
+            zarr_obs_elem = read_elem(zarr_obs_store)
+            zarr_var_store = zarr.open(
+                zarr_url, mode="r", use_consolidated=False,
+                path="var",
+                storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}}
+            )
+            zarr_var_elem = read_elem(zarr_var_store)
+        elif re_match_zip:
+            print(f"ZARR URL {zarr_url}")
+            fs = fsspec.filesystem(
+                "zip",
+                fo=zarr_url,
+                mode="r",
+                storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}}
+            )
+            all_files = fs.find("")
+            print("FILES")
+            for f in all_files[:15]:
+                print(f)
+            store_mapper = fs.get_mapper()
+            print(f"KEYS: {list(store_mapper.keys())}")
+            #root = zarr.open(store_mapper, mode="r", zarr_format=2)
+            store_obs_mapper = fs.get_mapper("obs")
+            print(f"POINT 0; obs keys: {list(store_obs_mapper.keys())}")
+            zarr_store = zarr.open_group(
+                store_mapper,
+                mode="r",
+                #zarr_format=2,
+                #use_consolidated=False
+                )
+
+            # zarr_obs_store = zarr.open_group(
+            #     store_obs_mapper,
+            #     mode="r",
+            #     zarr_format=2,
+            #     use_consolidated=False
+            #     )
+            print(f"POINT 1: {type(zarr_store)}")
+            #zarr_obs_elem = read_zarr(zarr_obs_store)
+            zarr_elem = read_zarr(zarr_store)
+            print("POINT 2")
+            #zarr_obs_elem = root["obs"]
+            #zarr_var_elem = root["var"]
+        else:
+            raise RuntimeError("Internal Error opening remote zarr")
+        print(f"zarr_obs_elem {zarr_obs_elem}")
+        print(f"zarr_var_elem {zarr_var_elem}")
 
         # We have no examples of these, but they may be info we
         # ultimately want to capture
