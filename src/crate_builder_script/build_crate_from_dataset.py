@@ -63,13 +63,13 @@ DEFAULT_INGEST_PIPELINE_URL = "https://github.com/hubmapconsortium/ingest-pipeli
 # - the workflow_instance lacks start and end dates
 # - "homo sapiens" is hard-coded into the keywords.  That will have to be
 #   fixed for SenNet.
-# - unpublished examples:
 #   TARGET_ID = "HBM567.VCBK.562"
 #   TARGET_ID = "HBM487.HJZB.546"  # primary dataset
 # - published examples:
 #   TARGET_ID = "HBM866.VMBK.952"
 #   TARGET_ID = "HBM473.QLDT.264"  # primary dataset
 #   TARGET_ID = "HBM748.CHWC.963"  # derived from snare-seq
+#   TARGET_ID = "HBM953.LMWQ.235"  # CODEX processed with zipped Zarr
 ###############
 
 

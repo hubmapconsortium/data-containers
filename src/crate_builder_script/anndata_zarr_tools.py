@@ -1,19 +1,16 @@
 """Provides functions to build the Croissant file."""
-import logging
-import re
-from pprint import pformat, pprint
-import os
-import fsspec
 from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
 from fsspec.implementations.zip import ZipFileSystem
-import zipfile
-from collections.abc import MutableMapping
+import logging
+from pprint import pformat
+import re
+from typing import Any
 
-from anndata.io import read_elem, read_zarr
+from anndata.io import read_elem
 import mlcroissant as mlc
-import zarr
-from zarr.core.buffer.core import default_buffer_prototype
 import pandas as pd
+import zarr
+
 from api_calls import asset_url
 from utils import (
     rel_path_to_id,
@@ -35,44 +32,17 @@ PANDAS_TO_CROISSANT_TYPES = {
 }
 
 
-class MapperWrapper(MutableMapping):
-    """Controls for bad behavior of AnnData 0.12 with Zarr for remote zips."""
-    def __init__(self, mapper):
-        self.mapper = mapper
-
-    def __getitem__(self, key):
-        print(f"GETITEM {key}")
-        return self.mapper[key]
-
-    def __contains__(self, key):
-        return key in self.mapper
-
-    def __keys__(self):
-        print("KEYS called")
-        return self.mapper.keys()
-
-    def __setitem__(self, key, value):
-        self.mapper[key] = value
-
-    def __delitem__(self, key):
-        del self.mapper[key]
-
-    def __iter__(self):
-        print("ITER")
-        return iter(self.mapper)
-
-    def __len__(self):
-        print("LEN")
-        return len(self.mapper)
-
-
 #
 # Copied from hubmapconsortium/portal-visualization utils.py
 # many thanks to Nick Akhmetov
 #
 class SafeZipFileSystem(ZipFileSystem):
-    # zarr 3 treats FileNotFoundError as "key absent"; ZipFileSystem raises KeyError,
-    # which breaks zarr's probes for optional metadata files.
+    """
+    Define ZipFileSystem with better FileNoteFound behavior
+
+    zarr 3 treats FileNotFoundError as "key absent"; ZipFileSystem raises KeyError,
+    which breaks zarr's probes for optional metadata files.
+    """
     def _open(self, path, mode="rb", *args, **kwargs):
         try:
             return super()._open(path, mode, *args, **kwargs)
@@ -81,6 +51,7 @@ class SafeZipFileSystem(ZipFileSystem):
 
 
 def open_zip_zarr_store(url, token=None):
+    """Open a remote zipped zarr file via URL."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     fs = SafeZipFileSystem(
         fo=url,
@@ -94,12 +65,14 @@ def open_zip_zarr_store(url, token=None):
 
 
 def anndata_zarr_fs_func(fs_info: dict) -> dict:
+    """FileSet generator for anndata_zarr."""
     rslt = {key: fs_info[key] for key in FILESET_KEYWORDS}
     LOGGER.info(f"_anndata_zarr_fs_func returning:\n{pformat(rslt)}")
     return rslt
 
 
 def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
+    """RecordSet generator for anndata_zarr."""
     id_base = rs_info["id"]
     obs_dtypes = rs_info.get("obs_dtypes", {})
     var_index = rs_info.get("var_index", {})
@@ -214,6 +187,21 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     return rslt
 
 
+def test_zarr_element_not_empty(key: str, elem: Any) -> None:
+    """Raise a warning/error if a zarr element is unexpectedly not empty"""
+    if isinstance(elem, pd.DataFrame):
+        if len(elem):
+            LOGGER.warning(f"AnnData Zarr element {key} (a Dataframe)"
+                        " was detected but not translated")
+    elif isinstance(elem, dict):
+        if elem:
+            LOGGER.warning(f"AnnData Zarr element {key} (a dict)"
+                        " was detected but not translated")
+    else:
+        LOGGER.error(f"The AnnData Zarr element {key} is unexpectedly"
+                    f" of type {type(elem)}")
+
+
 def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
     """If rel_path is an anndata_zarr root, return appropriate RecordSet info"""
     re_match_fs = ANNDATA_ZARR_RE.match(rel_path)
@@ -225,10 +213,6 @@ def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
         anchor_id = rel_path_to_id(re_match_any.group(1))
         zarr_url = asset_url(ds_uuid, anchor_id)
         auth_tok = os.environ["AUTH_TOK"]
-        # We can't actually open the X store because it's too large
-        # to work with here.  But we need its row and column counts
-        # to specify the X array.  We will need to get them from the
-        # obs and var stores.
         if re_match_fs:
             zarr_obs_store = zarr.open(
                 zarr_url, mode="r", use_consolidated=False,
@@ -242,50 +226,29 @@ def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
                 storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}}
             )
             zarr_var_elem = read_elem(zarr_var_store)
-            # We have no examples of these, but they may be info we
+            include_str = "../**/*"
+            # We have no examples of the following, but they may be info we
             # ultimately want to capture
             for elt in ["varm", "varp", "obsm", "obsp", "uns"]:
                 store = zarr.open(zarr_url, mode="r", use_consolidated=False,
                                 path=elt,
                                 storage_options={"headers":{"Authorization": f"Bearer {auth_tok}"}})
                 elem = read_elem(store)
-                if isinstance(elem, pd.DataFrame):
-                    if len(elem):
-                        LOGGER.warning(f"AnnData Zarr element {elt} (a Dataframe)"
-                                    " was detected but not translated")
-                elif isinstance(elem, dict):
-                    if elem:
-                        LOGGER.warning(f"AnnData Zarr element {elt} (a dict)"
-                                    " was detected but not translated")
-                else:
-                    LOGGER.error(f"The AnnData Zarr element {elt} is unexpectedly"
-                                f" of type {type(elem)}")
+                test_zarr_element_not_empty(elt, elem)
         elif re_match_zip:
             zarr_store = open_zip_zarr_store(zarr_url, token=auth_tok)
             zarr_group = zarr.open_group(zarr_store, mode="r", use_consolidated=False)
             zarr_obs_elem = read_elem(zarr_group["obs"])
             zarr_var_elem = read_elem(zarr_group["var"])
-            # We have no examples of these, but they may be info we
+            include_str = "*/*"
+            # We have no examples of the following, but they may be info we
             # ultimately want to capture
             for elt in ["varm", "varp", "obsm", "obsp", "uns"]:
                 if elt in zarr_group:
                     elem = read_elem(zarr_group[elt])
-                    if isinstance(elem, pd.DataFrame):
-                        if len(elem):
-                            LOGGER.warning(f"AnnData Zarr element {elt} (a Dataframe)"
-                                        " was detected but not translated")
-                    elif isinstance(elem, dict):
-                        if elem:
-                            LOGGER.warning(f"AnnData Zarr element {elt} (a dict)"
-                                        " was detected but not translated")
-                    else:
-                        LOGGER.error(f"The AnnData Zarr element {elt} is unexpectedly"
-                                    f" of type {type(elem)}")
-
+                    test_zarr_element_not_empty(elt, elem)
         else:
             raise RuntimeError("Internal Error opening remote zarr")
-        print(f"zarr_obs_elem {zarr_obs_elem}")
-        print(f"zarr_var_elem {zarr_var_elem}")
 
         obs_dtypes = zarr_obs_elem.dtypes
         var_index = zarr_var_elem.index
@@ -293,7 +256,7 @@ def anndata_zarr_detector(ds_uuid: str, rel_path:str) -> dict | None:
             "id": f"anndata-zarr-dir-{anchor_id}",
             "name": f"anndata_zarr_directory-{anchor_id}",
             "contained_in": [rel_path_to_id(rel_path)],
-            "includes": "../**/*", 
+            "includes": include_str,
             "encoding_formats": ["application/x-zarr"],
             "fileset_func": anndata_zarr_fs_func,
             "recordset_func": anndata_zarr_rs_func,
