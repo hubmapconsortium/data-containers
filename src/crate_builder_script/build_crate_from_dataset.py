@@ -4,7 +4,6 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
-from pathlib import Path
 from pprint import pformat
 from tempfile import TemporaryDirectory
 from typing import List

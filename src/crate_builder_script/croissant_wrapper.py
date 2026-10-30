@@ -1,28 +1,25 @@
 """Provides functions to build the Croissant file."""
-import copy
 import json
 import logging
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from pprint import pformat
 
 import mlcroissant as mlc
-import zarr
+from anndata_zarr_tools import anndata_zarr_detector
 from api_calls import asset_url, entity_iri, fetch_entity_info
+from edam_tables import EDAM_INFO
 from extractors import WrappedEntity
 from utils import (
     get_sha256_from_url,
     rel_path_to_id,
 )
-from edam_tables import EDAM_INFO
-from anndata_zarr_tools import anndata_zarr_detector
 
 LOGGER = logging.getLogger(__name__)
 
 
 def detect_recordset_root(ds_uuid: str, rel_path: str) -> dict | None:
-    """If rel_path is a fileset root, return appropriate RecordSet info"""
+    """If rel_path is a fileset root, return appropriate RecordSet info."""
     if rslt := anndata_zarr_detector(ds_uuid, rel_path):
         return rslt
     return None
@@ -276,9 +273,7 @@ class CroissantWrapper:
         self.keywords = None
 
     def add_file(self, ds_uuid: str, file_info: dict, file_blk: dict | None) -> None:
-        """
-        Define and describe a single file in the dataset.
-        """
+        """Define and describe a single file in the dataset."""
         args = {
             "id": rel_path_to_id(file_info["rel_path"]),
             "name": file_info["rel_path"],
@@ -311,7 +306,7 @@ class CroissantWrapper:
     def add_recordset_from_root(self, rs_info: dict) -> None:
         """
         Add one or more recordsets, and a fileset if necessary.
-        
+
         rs_info is a dict returned by detect_recordset_root().
         """
         if fileset_func := rs_info.get("fileset_func"):
