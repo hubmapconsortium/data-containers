@@ -12,7 +12,7 @@ from anndata.io import read_elem
 from api_calls import asset_url
 from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
 from fsspec.implementations.zip import ZipFileSystem
-from utils import FILESET_KEYWORDS, rel_path_to_id
+from utils import FILESET_KEYWORDS, rel_path_to_id, safe_id
 
 LOGGER = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
 
     # Build the row index RecordSet
     row_field = mlc.Field(
-        id=f"{id_base}/cells/cell-id",
+        id=safe_id(id_base, "/cells/cell-id"),
         name="cell_id",
         data_types=[mlc.DataType.TEXT],
         source=mlc.Source(
@@ -87,7 +87,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     )
     field_list = [row_field]
     row_index_rs = {
-        "id": f"{id_base}/cell-id-index",
+        "id": safe_id(id_base, "/cell-id-index"),
         "name": "cell-id-index",
         "description": "individual cell ids",
         "fields": field_list,
@@ -95,7 +95,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
 
     # Build the column index RecordSet
     col_field = mlc.Field(
-        id=f"{id_base}/cells/channel-id",
+        id=safe_id(id_base, "/cells/channel-id"),
         name="channel_id",
         data_types=[mlc.DataType.TEXT],
         source=mlc.Source(
@@ -104,7 +104,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     )
     field_list = [col_field]
     col_index_rs = {
-        "id": f"{id_base}/channel-index",
+        "id": safe_id(id_base, "/channel-index"),
         "name": "cell-index",
         "description": "individual channel ids",
         "fields": field_list,
@@ -113,7 +113,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     # Build the RecordSet for X, referencing the indices
     field_list = [
         {
-            "id": f"{id_base}/cells/expression-matrix",
+            "id": safe_id(id_base, "/cells/expression-matrix"),
             "name": "expression-matrix",
             "data_types": [mlc.DataType.FLOAT],
             "is_array": True,
@@ -123,14 +123,14 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
             ),
         },
         {
-            "id": f"{id_base}/cells/expression-rows",
+            "id": safe_id(id_base, "/cells/expression-rows"),
             "name": "expression-rows",
             "description": "expression matrix row IDs",
             "data_types": [mlc.DataType.TEXT],
             "references": row_field,
         },
         {
-            "id": f"{id_base}/cells/expression-columns",
+            "id": safe_id(id_base, "/cells/expression-columns"),
             "name": "expresion-columns",
             "description": "expression matrix column IDs",
             "data_types": [mlc.DataType.TEXT],
@@ -139,7 +139,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     ]
     field_list = [mlc.Field(**elt) for elt in field_list]  # convert to fields
     X_rs = {
-        "id": f"{id_base}/expression-matrix",
+        "id": safe_id(id_base, "/expression-matrix"),
         "name": "expression-matrix",
         "description": "expression data matrix",
         "fields": field_list,
@@ -151,7 +151,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
         if cr_dtype := PANDAS_TO_CROISSANT_TYPES.get(str(dtype)):
             field_list.append(
                 {
-                    "id": f"{id_base}/cells/{col}",
+                    "id": safe_id(id_base, f"/cells/{col}"),
                     "name": col,
                     "data_types": [cr_dtype],
                     "source": mlc.Source(
@@ -166,7 +166,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
             )
     field_list.append(
         {
-            "id": f"{id_base}/cells/obs-rows",
+            "id": safe_id(id_base, "/cells/obs-rows"),
             "name": "obs-rows",
             "description": "observation matrix row IDs",
             "data_types": [mlc.DataType.TEXT],
@@ -175,7 +175,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     )
     field_list = [mlc.Field(**elt) for elt in field_list]  # convert to fields
     obs_rs = {
-        "id": f"{id_base}/cells-obs",
+        "id": safe_id(id_base, "/cells-obs"),
         "name": "cells-obs",
         "description": "individual cells obs data",
         "fields": field_list,
@@ -267,7 +267,7 @@ def anndata_zarr_detector(ds_uuid: str, rel_path: str) -> dict | None:
         obs_dtypes = zarr_obs_elem.dtypes
         var_index = zarr_var_elem.index
         return {
-            "id": f"anndata-zarr-dir-{anchor_id}",
+            "id": safe_id(f"anndata-zarr-dir-{anchor_id}"),
             "name": f"anndata_zarr_directory-{anchor_id}",
             "contained_in": [rel_path_to_id(rel_path)],
             "includes": include_str,

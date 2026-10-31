@@ -8,9 +8,19 @@ FILESET_KEYWORDS = ["id", "name", "contained_in", "includes", "encoding_formats"
 RECORDSET_KEYWORDS = ["id", "name", "description", "fields"]
 
 
+def safe_id(base: str, key: str | None = None) -> str:
+    """Work around mlcommons restrictions on id strings."""
+    if key:
+        id = f"{base}/{key}"
+    else:
+        id = f"{base}"
+    id = id.replace(" ","--")
+    return id
+
+
 def rel_path_to_id(rel_path: str) -> str:
     """Provide a standard mapping from paths to ID strings."""
-    return rel_path
+    return safe_id(rel_path)
 
 
 def get_sha256_from_url(url: str, chunk_size: int = 16384) -> str:
