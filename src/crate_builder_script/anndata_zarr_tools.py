@@ -127,14 +127,14 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
             "name": "expression-rows",
             "description": "expression matrix row IDs",
             "data_types": [mlc.DataType.TEXT],
-            "references": row_field,
+            "references": mlc.Source(field=row_field.id),
         },
         {
             "id": safe_id(id_base, "/cells/expression-columns"),
             "name": "expresion-columns",
             "description": "expression matrix column IDs",
             "data_types": [mlc.DataType.TEXT],
-            "references": col_field,
+            "references": mlc.Source(field=col_field.id),
         },
     ]
     field_list = [mlc.Field(**elt) for elt in field_list]  # convert to fields
@@ -170,7 +170,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
             "name": "obs-rows",
             "description": "observation matrix row IDs",
             "data_types": [mlc.DataType.TEXT],
-            "references": row_field,
+            "references": mlc.Source(field=row_field.id),
         },
     )
     field_list = [mlc.Field(**elt) for elt in field_list]  # convert to fields
