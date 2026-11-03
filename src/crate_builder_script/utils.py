@@ -14,7 +14,7 @@ def safe_id(base: str, key: str | None = None) -> str:
         id = f"{base}/{key}"
     else:
         id = f"{base}"
-    id = id.replace(" ","--")
+    id = id.replace(" ", "--")
     return id
 
 
