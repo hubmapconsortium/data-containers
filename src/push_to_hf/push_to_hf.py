@@ -53,12 +53,12 @@ def read_dask(store):
 
 def adata_from_filesets(ds_json):
     rslt = {}
-    for file_set in [elt for elt in ds_json["distribution"] if elt["@type"] == "cr:FileSet"]:
+    for file_set in [elt for elt in ds_json["schema:distribution"] if elt["@type"] == "cr:FileSet"]:
         pprint(file_set)
         fs_id = file_set["@id"]
-        contained_in = file_set["containedIn"]["@id"]
+        contained_in = file_set["schema:containedIn"]["@id"]
         print(f"containedIn: {contained_in}")
-        if (encoding_format := file_set.get("encodingFormat")) == "application/x-zarr":
+        if (encoding_format := file_set.get("schema:encodingFormat")) == "application/x-zarr":
             includes_str = file_set.get("includes")
             assert includes_str == "../**/*", f"Unexpected FileSet 'includes' value {includes_str}"
             container = [elt for elt in ds_json["distribution"] if elt["@id"] == contained_in][0]
