@@ -61,10 +61,10 @@ def adata_from_filesets(ds_json):
         if (encoding_format := file_set.get("schema:encodingFormat")) == "application/x-zarr":
             includes_str = file_set.get("includes")
             assert includes_str == "../**/*", f"Unexpected FileSet 'includes' value {includes_str}"
-            container = [elt for elt in ds_json["distribution"] if elt["@id"] == contained_in][0]
+            container = [elt for elt in ds_json["schema:distribution"] if elt["@id"] == contained_in][0]
             print(f"FileSet {file_set['@id']} zarr data contained in:")
             pprint(container)
-            content_url = container["contentUrl"]
+            content_url = container["schema:contentUrl"]
             offset = content_url.rfind("/")
             base_url = content_url[:offset]
             print(f"Reading adata from {base_url}")
