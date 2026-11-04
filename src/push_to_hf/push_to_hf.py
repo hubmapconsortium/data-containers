@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections import defaultdict
 
 import dask.array as da
+import dask.dataframe as dd
+import pandas as pd
+import numpy as np
 import scanpy as sc
 import zarr
 import logging
@@ -14,8 +18,12 @@ import json
 
 from typing import Any
 
-from anndata.experimental import read_dispatched, write_dispatched
+from anndata import AnnData
+from anndata.experimental import read_dispatched, write_dispatched, StorageType
 from anndata.io import read_elem
+
+from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
+from fsspec.implementations.zip import ZipFileSystem
 
 import mlcroissant as mlc
 
@@ -23,17 +31,91 @@ from pprint import pformat, pprint
 
 from jsonpath_ng import parse
 
+from dataframe_factories import (
+    BaseDataFrameFactory,
+    ExpressionMatrixDataFrameFactory,
+)
+
 logging.basicConfig(
     level=logging.INFO,
 )
 
 LOGGER = logging.getLogger(__name__)
 
-def read_dask(store):
-    f = zarr.open(store, mode="r", storage_options={"headers": {"Authorization": f"Bearer {os.environ['AUTH_TOK']}"}})
+
+class BaseDataFrameFactory:
+    """Provide a base class for a set of classes to handle multiple field configurations."""
+    def __init__(self, field_list: list[mlc.Field], field_value_dict: dict[str, Any]):
+        self.field_list = field_list
+        self.field_value_dict = field_value_dict
+
+    def test(self) -> bool:
+        """Test if this class is suitable for the given list of fields."""
+        return False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        raise StopIteration()
+
+    def count_field_types(self) -> defaultdict[type, int]:
+        fld_val_tp_cnts = defaultdict(int)
+        for fld in self.field_list:
+            fld_id = fld["@id"]
+            fld_value = self.field_value_dict[fld_id]
+            fld_val_tp_cnts[type(fld_value)] += 1
+        return fld_val_tp_cnts
+
+
+class ExpressionMatrixDataFrameFactory(BaseDataFrameFactory):
+    def test(self) -> bool:
+        """Test if this class is suitable for the given list of fields."""
+        tp_cts = self.count_field_types()
+        if (
+            tp_cts[pd.core.indexes.base.Index] == 2
+            and (tp_cts[da.core.Array] == 1 or tp_cts[np.ndarray] == 1)
+        ):
+            return True
+        return False
+
+
+# Temporarily copied from anndata_zarr_tools in the phenocycler-to-hf branch
+# until that branch gets merged
+class SafeZipFileSystem(ZipFileSystem):
+    """
+    Define ZipFileSystem with better FileNoteFound behavior.
+
+    zarr 3 treats FileNotFoundError as "key absent"; ZipFileSystem raises KeyError,
+    which breaks zarr's probes for optional metadata files.
+    """
+
+    def _open(self, path, mode="rb", *args, **kwargs):
+        try:
+            return super()._open(path, mode, *args, **kwargs)
+        except KeyError as e:
+            raise FileNotFoundError(path) from e
+
+
+def create_zip_zarr_store(url: str, token: str=None) -> StorageType:
+    """Open a remote zipped zarr file via URL."""
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    fs = SafeZipFileSystem(
+        fo=url,
+        target_protocol="https",  # NOT remote_protocol/remote_options: silently ignored
+        target_options={"client_kwargs": {"headers": headers}},
+    )
+    # zarr 3's FsspecStore needs an async filesystem; ZipFileSystem is sync.
+    store = zarr.storage.FsspecStore(
+        AsyncFileSystemWrapper(fs, asynchronous=True), read_only=True
+    )
+    return store
+
+
+
+def read_dask(store: StorageType) -> AnnData:
 
     def callback(func, elem_name: str, elem, iospec):
-        print(f"callback {elem_name}: {iospec}")
         if iospec.encoding_type in (
             "dataframe",
             "csr_matrix",
@@ -47,57 +129,70 @@ def read_dask(store):
         else:
             return func(elem)
 
-    adata = read_dispatched(f, callback=callback)
+    adata = read_dispatched(store, callback=callback)
 
     return adata
 
-def adata_from_filesets(ds_json):
+def adata_from_filesets(ds_json: dict[str, Any]):
     rslt = {}
     for file_set in [elt for elt in ds_json["schema:distribution"] if elt["@type"] == "cr:FileSet"]:
-        pprint(file_set)
         fs_id = file_set["@id"]
         contained_in = file_set["schema:containedIn"]["@id"]
-        print(f"containedIn: {contained_in}")
         if (encoding_format := file_set.get("schema:encodingFormat")) == "application/x-zarr":
-            includes_str = file_set.get("includes")
-            assert includes_str == "../**/*", f"Unexpected FileSet 'includes' value {includes_str}"
             container = [elt for elt in ds_json["schema:distribution"] if elt["@id"] == contained_in][0]
-            print(f"FileSet {file_set['@id']} zarr data contained in:")
-            pprint(container)
             content_url = container["schema:contentUrl"]
-            offset = content_url.rfind("/")
-            base_url = content_url[:offset]
-            print(f"Reading adata from {base_url}")
-            adata = read_dask(base_url)
+            includes_str = file_set.get("includes")
+            if content_url.endswith(".zip"):
+                assert includes_str == "*/*", f"Unexpected FileSet 'includes' value {includes_str}"
+                store = zarr.open(
+                    create_zip_zarr_store(content_url, token=os.environ["AUTH_TOK"]),
+                    mode="r",
+                )
+                adata = read_dask(store)
+            else:
+                assert includes_str == "../**/*", f"Unexpected FileSet 'includes' value {includes_str}"
+                offset = content_url.rfind("/")
+                base_url = content_url[:offset]
+                store = zarr.open(
+                        base_url, mode="r",
+                        storage_options={"headers": {"Authorization": f"Bearer {os.environ['AUTH_TOK']}"}}
+                        )
+                adata = read_dask(store)
             rslt[fs_id] = adata
-            print("successfully accessed anndata from this fileset")
+            LOGGER.info(f"successfully accessed anndata from fileset {fs_id}")
         else:
-            print(f"Unrecognized encodingFormat {encoding_format}")
+            LOGGER.error(f"Unrecognized encodingFormat {encoding_format} for fileset {fs_id}")
     return rslt
 
-def get_adata_by_jsonpath(adata, path_str):
+
+def _get_part(obj: AnnData | dict, target: str) -> AnnData | dict:
+    """Works for both an AnnData object and a dict"""
+    if hasattr(obj, target):
+        return getattr(obj, target)
+    else:
+        return obj[target]
+
+
+def get_adata_by_jsonpath(adata: AnnData, path_str: str) -> Any:
     path_segments = []
     current_expr = parse(path_str)
     while hasattr(current_expr, "left") and hasattr(current_expr, "right"):
-        print(f"current_expr: {current_expr} ; path_segments: {path_segments}")
         if hasattr(current_expr.right, "fields"):
             path_segments.insert(0, current_expr.right.fields[0])
         elif hasattr(current_expr.right, "index"):
             path_segments.insert(0, current_expr.right.index)
         current_expr = current_expr.left
-    print(f"exit: current_expr {current_expr} path_segments {path_segments}")
 
     if hasattr(current_expr, "fields"):
         path_segments.insert(0, current_expr.fields[0])
     if hasattr(current_expr, "index"):
         path_segments.insert(0, current_expr.index)
 
-    print(f"final: current_expr {current_expr} path_segments {path_segments}")
-
-    cur_obj = getattr(adata, path_segments[0])
+    cur_obj = _get_part(adata, path_segments[0])
     for seg in path_segments[1:]:
-        cur_obj = getattr(cur_obj, seg)
+        cur_obj = _get_part(cur_obj, seg)
     return cur_obj
+
 
 def read_croissant_json(target_crate: str) -> dict[str, Any]:
     if target_crate.endswith(".json"):
@@ -136,6 +231,64 @@ def main() -> None:
     ds_json = read_croissant_json(target_crate)
     pprint(ds_json, depth=2)
     fileset_d = adata_from_filesets(ds_json)
+    all_fields_d = {}
+    all_field_values_d = {}
+    for record_set in ds_json.get("recordSet", []):
+        print(f"Handling record set {record_set['schema:name']} {record_set['@id']}:")
+        for fld in record_set["field"]:
+            assert fld["@id"] not in all_fields_d, f"redundant field {fld['@id']}"
+            all_fields_d[fld["@id"]] = fld
+    for fld_id in all_fields_d:
+        fld = all_fields_d[fld_id]
+        if "references" in fld:
+            refs = fld["references"]
+            for key in refs:
+                if key == "field":
+                    ref_field_d = refs["field"]
+                    for keykey in ref_field_d:
+                        if keykey == "@id":
+                            assert ref_field_d["@id"] in all_fields_d
+                        else:
+                            raise RuntimeError(f"Unexpected key {keykey} in references[field] for Field {fld_id}")
+                else:
+                    raise RuntimeError(f"Unexpected key {key} in references for Field {fld_id}")
+        else:
+            try:
+                assert "source" in fld
+                assert "fileSet" in fld["source"] and "@id" in fld["source"]["fileSet"]
+                assert "extract" in fld["source"] and "jsonPath" in fld["source"]["extract"]
+                print(f"OK ref to {fld_id}")
+            except AssertionError as excp:
+                pprint(fld)
+                raise excp
+            value = get_adata_by_jsonpath(
+                fileset_d[fld["source"]["fileSet"]["@id"]],
+                fld["source"]["extract"]["jsonPath"]
+            )
+            print(f"{fld_id} yielded {type(value)}")
+            all_field_values_d[fld_id] = value
+
+    for fld_id in [elt for elt in all_fields_d if "references" in all_fields_d[elt]]:
+        fld = all_fields_d[fld_id]
+        ref_field_d = fld["references"]
+        all_field_values_d[fld_id] = all_field_values_d[ref_field_d["field"]["@id"]]
+
+    for record_set in ds_json.get("recordSet", []):
+        print(f"Handling record set {record_set['schema:name']} {record_set['@id']}:")
+        for factory_type in [
+            BaseDataFrameFactory,
+            ExpressionMatrixDataFrameFactory,
+        ]:
+            factory = factory_type(record_set["field"], all_field_values_d)
+            if factory.test():
+                print(f"yes to {factory_type}")
+                pprint(factory.count_field_types())
+                for df in factory:
+                    print(f"ping {df}")
+            else:
+                print(f"no to {factory_type}")
+
+
 
 if __name__ == "__main__":
     main()
