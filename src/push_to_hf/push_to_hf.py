@@ -260,8 +260,8 @@ def main() -> None:
                     dataset = Dataset.from_pandas(df, info=base_info)
                     count_str = f"- {int(rs_ds_count) + 1}" if rs_ds_count else ""
                     dataset.push_to_hub(
-                        repo_id=f"HuBMAP/hm_datasets",
-                        config_name=f"{base_name}/{rs_name}{count_str}"
+                        repo_id=f"HuBMAP/{base_name}",
+                        config_name=f"{rs_name}{count_str}"
                     )
                     rs_ds_count += 1
         if not rs_transcribed:
