@@ -172,6 +172,17 @@ def read_croissant_json(target_crate: str) -> dict[str, Any]:
     return ds.metadata.to_json()
 
 
+def collect_fields(ds_json: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Collect Field structures from all recordSets."""
+    all_fields_d = {}
+    for record_set in ds_json.get("recordSet", []):
+        print(f"Handling record set {record_set['schema:name']} {record_set['@id']}:")
+        for fld in record_set["field"]:
+            assert fld["@id"] not in all_fields_d, f"redundant field {fld['@id']}"
+            all_fields_d[fld["@id"]] = fld
+    return all_fields_d
+
+
 def main() -> None:
     """Parse command line and carry out construction of the RO-Crate and Croissant files."""
     parser = argparse.ArgumentParser()
@@ -194,13 +205,7 @@ def main() -> None:
 
     ds_json = read_croissant_json(target_crate)
     fileset_d = adata_from_filesets(ds_json)
-    all_fields_d = {}
-    all_field_values_d = {}
-    for record_set in ds_json.get("recordSet", []):
-        print(f"Handling record set {record_set['schema:name']} {record_set['@id']}:")
-        for fld in record_set["field"]:
-            assert fld["@id"] not in all_fields_d, f"redundant field {fld['@id']}"
-            all_fields_d[fld["@id"]] = fld
+    all_field_values_d = collect_fields(ds_json)
     for fld_id in all_fields_d:
         fld = all_fields_d[fld_id]
         if "references" in fld:
