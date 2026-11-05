@@ -19,7 +19,7 @@ import json
 from typing import Any
 
 from anndata import AnnData
-from anndata.experimental import read_dispatched, write_dispatched, StorageType
+from anndata.experimental import read_dispatched, StorageType
 from anndata.io import read_elem
 
 from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
@@ -41,43 +41,6 @@ logging.basicConfig(
 )
 
 LOGGER = logging.getLogger(__name__)
-
-
-class BaseDataFrameFactory:
-    """Provide a base class for a set of classes to handle multiple field configurations."""
-    def __init__(self, field_list: list[mlc.Field], field_value_dict: dict[str, Any]):
-        self.field_list = field_list
-        self.field_value_dict = field_value_dict
-
-    def test(self) -> bool:
-        """Test if this class is suitable for the given list of fields."""
-        return False
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        raise StopIteration()
-
-    def count_field_types(self) -> defaultdict[type, int]:
-        fld_val_tp_cnts = defaultdict(int)
-        for fld in self.field_list:
-            fld_id = fld["@id"]
-            fld_value = self.field_value_dict[fld_id]
-            fld_val_tp_cnts[type(fld_value)] += 1
-        return fld_val_tp_cnts
-
-
-class ExpressionMatrixDataFrameFactory(BaseDataFrameFactory):
-    def test(self) -> bool:
-        """Test if this class is suitable for the given list of fields."""
-        tp_cts = self.count_field_types()
-        if (
-            tp_cts[pd.core.indexes.base.Index] == 2
-            and (tp_cts[da.core.Array] == 1 or tp_cts[np.ndarray] == 1)
-        ):
-            return True
-        return False
 
 
 # Temporarily copied from anndata_zarr_tools in the phenocycler-to-hf branch
@@ -282,9 +245,8 @@ def main() -> None:
             factory = factory_type(record_set["field"], all_field_values_d)
             if factory.test():
                 print(f"yes to {factory_type}")
-                pprint(factory.count_field_types())
                 for df in factory:
-                    print(f"ping {df}")
+                    print(f"{df}")
             else:
                 print(f"no to {factory_type}")
 
