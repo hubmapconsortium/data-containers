@@ -10,24 +10,9 @@ import dask.array as da
 import dask.dataframe as dd
 import pandas as pd
 import numpy as np
-import scanpy as sc
-import zarr
 import logging
-from zipfile import ZipFile
-import json
 
 from typing import Any
-
-from anndata import AnnData
-from anndata.experimental import read_dispatched, write_dispatched, StorageType
-from anndata.io import read_elem
-
-from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
-from fsspec.implementations.zip import ZipFileSystem
-
-import mlcroissant as mlc
-
-from jsonpath_ng import parse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,3 +82,36 @@ class ExpressionMatrixDataFrameFactory(BaseDataFrameFactory):
             columns=self.field_value_dict[col_field_id],
             index=self.field_value_dict[row_field_id]
         )
+
+
+class SeriesListDataFrameFactory(BaseDataFrameFactory):
+    def test(self) -> bool:
+        """Test if this class is suitable for the given list of fields."""
+        tp_cts = self.count_field_types()
+        if (
+            tp_cts[pd.core.indexes.base.Index] == 1
+            and (tp_cts[pd.core.series.Series] >= 1)
+        ):
+            return True
+        return False
+
+    def __iter__(self) -> Generator(None, None, None):
+        index_field = [
+            fld for fld in self.field_list
+            if isinstance(self.field_value_dict[fld["@id"]],
+                          pd.core.indexes.base.Index)
+        ][0]
+        index_field_id = index_field["@id"]
+        index_field_value = self.field_value_dict[index_field_id]
+        col_fields = [fld for fld in self.field_list
+                      if isinstance(self.field_value_dict[fld["@id"]],
+                                    pd.core.series.Series)]
+        col_values = []
+        col_names = []
+        for fld in col_fields:
+            fld_id = fld["@id"]
+            col_values.append(self.field_value_dict[fld_id])
+            col_names.append(fld["schema:name"])
+        df = pd.concat(col_values, axis=1, keys=col_names)
+        assert df.index.equals(index_field_value), "index does not match columns"
+        yield df
