@@ -8,6 +8,7 @@ from collections import defaultdict
 
 import dask.array as da
 import dask.dataframe as dd
+from datasets import Dataset, DatasetInfo
 import pandas as pd
 import numpy as np
 import scanpy as sc
@@ -27,13 +28,13 @@ from fsspec.implementations.zip import ZipFileSystem
 
 import mlcroissant as mlc
 
-from pprint import pformat, pprint
+from pprint import pformat
 
 from jsonpath_ng import parse
 
 from dataframe_factories import (
-    BaseDataFrameFactory,
     ExpressionMatrixDataFrameFactory,
+    SeriesListDataFrameFactory,
 )
 
 logging.basicConfig(
@@ -189,10 +190,9 @@ def main() -> None:
         LOGGER.setLevel(logging.DEBUG)
         logging.getLogger("requests").setLevel(logging.DEBUG)
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
-        #logging.getLogger("croissant_wrapper").setLevel(logging.DEBUG)
+        #logging.getLogger("datafame_factories").setLevel(logging.DEBUG)
 
     ds_json = read_croissant_json(target_crate)
-    pprint(ds_json, depth=2)
     fileset_d = adata_from_filesets(ds_json)
     all_fields_d = {}
     all_field_values_d = {}
@@ -220,15 +220,15 @@ def main() -> None:
                 assert "source" in fld
                 assert "fileSet" in fld["source"] and "@id" in fld["source"]["fileSet"]
                 assert "extract" in fld["source"] and "jsonPath" in fld["source"]["extract"]
-                print(f"OK ref to {fld_id}")
             except AssertionError as excp:
-                pprint(fld)
+                LOGGER.error("Failed assertion on the following field:\n"
+                             f"{pformat(fld)}")
                 raise excp
             value = get_adata_by_jsonpath(
                 fileset_d[fld["source"]["fileSet"]["@id"]],
                 fld["source"]["extract"]["jsonPath"]
             )
-            print(f"{fld_id} yielded {type(value)}")
+            LOGGER.debug(f"{fld_id} yielded {type(value)}")
             all_field_values_d[fld_id] = value
 
     for fld_id in [elt for elt in all_fields_d if "references" in all_fields_d[elt]]:
@@ -236,19 +236,36 @@ def main() -> None:
         ref_field_d = fld["references"]
         all_field_values_d[fld_id] = all_field_values_d[ref_field_d["field"]["@id"]]
 
+    base_name = ds_json["schema:name"]
+    base_info = DatasetInfo(
+        description=ds_json["schema:description"],
+        citation=ds_json["citeAs"],
+        license=ds_json["schema:license"],
+        #keywords=ds_json["schema:keywords"],
+    )
     for record_set in ds_json.get("recordSet", []):
-        print(f"Handling record set {record_set['schema:name']} {record_set['@id']}:")
+        rs_name = record_set["schema:name"]
+        rs_id = record_set["@id"]
+        rs_transcribed = False
+        rs_ds_count = 0
         for factory_type in [
-            BaseDataFrameFactory,
             ExpressionMatrixDataFrameFactory,
+            SeriesListDataFrameFactory,
         ]:
             factory = factory_type(record_set["field"], all_field_values_d)
             if factory.test():
-                print(f"yes to {factory_type}")
                 for df in factory:
+                    rs_transcribed = True
                     print(f"{df}")
-            else:
-                print(f"no to {factory_type}")
+                    dataset = Dataset.from_pandas(df, info=base_info)
+                    count_str = f"- {int(rs_ds_count) + 1}" if rs_ds_count else ""
+                    dataset.push_to_hub(
+                        repo_id=f"HuBMAP/hm_datasets",
+                        config_name=f"{base_name}/{rs_name}{count_str}"
+                    )
+                    rs_ds_count += 1
+        if not rs_transcribed:
+            LOGGER.info(f"RecordSet {rs_name} {rs_id} was not transcribed")
 
 
 
