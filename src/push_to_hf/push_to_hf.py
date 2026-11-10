@@ -97,7 +97,7 @@ def read_dask(store: StorageType) -> AnnData:
 
     return adata
 
-def adata_from_filesets(ds_json: dict[str, Any]):
+def adata_from_filesets(ds_json: dict[str, Any]) -> dict[str, AnnData]:
     rslt = {}
     for file_set in [elt for elt in ds_json["schema:distribution"] if elt["@type"] == "cr:FileSet"]:
         fs_id = file_set["@id"]
@@ -183,29 +183,18 @@ def collect_fields(ds_json: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return all_fields_d
 
 
-def main() -> None:
-    """Parse command line and carry out construction of the RO-Crate and Croissant files."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("target_crate", help="Croissant or crate zip to upload")
-    parser.add_argument(
-        "--debug",
-        "-d",
-        action="store_true",
-        help="Enable debug logging",
-    )
-    args = parser.parse_args()
-    target_crate = args.target_crate
-    debug = args.debug
+def collect_field_values(
+        all_fields_d: dict[str, dict[str, Any]],
+        fileset_d: dict[str, AnnData]
+        ) -> dict[str, Any]:
+    """
+    Calculate and collect the values of known fields.
 
-    if debug:
-        LOGGER.setLevel(logging.DEBUG)
-        logging.getLogger("requests").setLevel(logging.DEBUG)
-        logging.getLogger("urllib3").setLevel(logging.DEBUG)
-        #logging.getLogger("datafame_factories").setLevel(logging.DEBUG)
-
-    ds_json = read_croissant_json(target_crate)
-    fileset_d = adata_from_filesets(ds_json)
-    all_field_values_d = collect_fields(ds_json)
+    Fields that get their values from reference are left unresolved.  Some syntax
+    checking is applied to make sure the field json implements the expected
+    relationships.
+    """
+    all_field_values_d = {}
     for fld_id in all_fields_d:
         fld = all_fields_d[fld_id]
         if "references" in fld:
@@ -235,11 +224,51 @@ def main() -> None:
             )
             LOGGER.debug(f"{fld_id} yielded {type(value)}")
             all_field_values_d[fld_id] = value
+    return all_field_values_d
 
+
+def resolve_references(
+        all_fields_d: dict[str, dict[str, Any]],
+        all_field_values_d: dict[str, Any],
+        ) -> None:
+    """Associate values with reference fields."""
     for fld_id in [elt for elt in all_fields_d if "references" in all_fields_d[elt]]:
         fld = all_fields_d[fld_id]
         ref_field_d = fld["references"]
         all_field_values_d[fld_id] = all_field_values_d[ref_field_d["field"]["@id"]]
+
+
+def main() -> None:
+    """Parse command line and carry out construction of the RO-Crate and Croissant files."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("target_crate", help="Croissant or crate zip to upload")
+    parser.add_argument(
+        "--debug",
+        "-d",
+        action="store_true",
+        help="Enable debug logging",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build internal data structures but do not actually upload anything to HF"
+    )
+    args = parser.parse_args()
+    target_crate = args.target_crate
+    debug = args.debug
+    dry_run = args.dry_run
+
+    if debug:
+        LOGGER.setLevel(logging.DEBUG)
+        logging.getLogger("requests").setLevel(logging.DEBUG)
+        logging.getLogger("urllib3").setLevel(logging.DEBUG)
+        #logging.getLogger("datafame_factories").setLevel(logging.DEBUG)
+
+    ds_json = read_croissant_json(target_crate)
+    fileset_d = adata_from_filesets(ds_json)
+    all_fields_d = collect_fields(ds_json)
+    all_field_values_d = collect_field_values(all_fields_d, fileset_d)
+    resolve_references(all_fields_d, all_field_values_d)
 
     base_name = ds_json["schema:name"]
     base_info = DatasetInfo(
@@ -264,10 +293,12 @@ def main() -> None:
                     print(f"{df}")
                     dataset = Dataset.from_pandas(df, info=base_info)
                     count_str = f"- {int(rs_ds_count) + 1}" if rs_ds_count else ""
-                    dataset.push_to_hub(
-                        repo_id=f"HuBMAP/{base_name}",
-                        config_name=f"{rs_name}{count_str}"
-                    )
+                    repo_id = f"HuBMAP/{base_name}"
+                    config_name = f"{rs_name}{count_str}"
+                    if dry_run:
+                        LOGGER.info(f"Dry run ; skipping push of {repo_id} {config_name}")
+                    else:
+                        dataset.push_to_hub(repo_id=repo_id, config_name=config_name)
                     rs_ds_count += 1
         if not rs_transcribed:
             LOGGER.info(f"RecordSet {rs_name} {rs_id} was not transcribed")
