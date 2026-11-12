@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import io
 from collections import defaultdict
 
 import dask.array as da
 import dask.dataframe as dd
-from datasets import Dataset, DatasetInfo
+from datasets import Dataset
+from huggingface_hub import HfApi
 import pandas as pd
 import numpy as np
 import scanpy as sc
@@ -16,6 +18,7 @@ import zarr
 import logging
 from zipfile import ZipFile
 import json
+import yaml
 
 from typing import Any
 
@@ -76,7 +79,6 @@ def create_zip_zarr_store(url: str, token: str=None) -> StorageType:
     return store
 
 
-
 def read_dask(store: StorageType) -> AnnData:
 
     def callback(func, elem_name: str, elem, iospec):
@@ -94,8 +96,8 @@ def read_dask(store: StorageType) -> AnnData:
             return func(elem)
 
     adata = read_dispatched(store, callback=callback)
-
     return adata
+
 
 def adata_from_filesets(ds_json: dict[str, Any]) -> dict[str, AnnData]:
     rslt = {}
@@ -172,11 +174,10 @@ def read_croissant_json(target_crate: str) -> dict[str, Any]:
     return ds.metadata.to_json()
 
 
-def collect_fields(ds_json: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def collect_fields(ds_json: dict[str, Any]) -> dict[str, dictprin[str, Any]]:
     """Collect Field structures from all recordSets."""
     all_fields_d = {}
     for record_set in ds_json.get("recordSet", []):
-        print(f"Handling record set {record_set['schema:name']} {record_set['@id']}:")
         for fld in record_set["field"]:
             assert fld["@id"] not in all_fields_d, f"redundant field {fld['@id']}"
             all_fields_d[fld["@id"]] = fld
@@ -238,6 +239,44 @@ def resolve_references(
         all_field_values_d[fld_id] = all_field_values_d[ref_field_d["field"]["@id"]]
 
 
+def license_to_hf_license(license: str) -> str:
+    """
+    Attempt to map spdx.org license name to HuggingFace name.
+
+    See https://huggingface.co/docs/hub/repositories-licenses for a full
+    list of supported HF license strings.  If this function returns an
+    invalid string the call to upload the README information will fail.
+    """
+    suffix = license[license.rfind("/")+1:]
+    return suffix.lower()
+
+
+def build_metadata(ds_json: dict[str, Any]) -> dict[str, Any]:
+    """Construct the metadata that goes in the YAML block of the readme.md file."""
+    return {
+        "description": ds_json["schema:description"],
+        "citation": ds_json["citeAs"],
+        "license": license_to_hf_license(ds_json["schema:license"]),
+        "tags": ds_json["schema:keywords"],
+    }
+
+
+def build_readme(ds_json: dict[str, Any]) -> str:
+    md_info = build_metadata(ds_json)
+    LOGGER.debug(f"Metadata:\n{pformat(md_info)}")
+
+    descr = (ds_json["schema:description"]
+             .replace("[", r"\[").replace("]", r"\]"))
+    with io.StringIO() as readme_fo:
+        readme_fo.write("---\n")
+        yaml.dump(md_info, readme_fo)
+        readme_fo.write("---\n")
+        readme_fo.write(f"# {ds_json['schema:name']}\n")
+        readme_fo.write(descr)
+        readme_str = readme_fo.getvalue()
+    return readme_str
+
+    
 def main() -> None:
     """Parse command line and carry out construction of the RO-Crate and Croissant files."""
     parser = argparse.ArgumentParser()
@@ -265,18 +304,14 @@ def main() -> None:
         #logging.getLogger("datafame_factories").setLevel(logging.DEBUG)
 
     ds_json = read_croissant_json(target_crate)
+
+    base_name = ds_json["schema:name"]
+    repo_id = f"HuBMAP/{base_name}"
+    
     fileset_d = adata_from_filesets(ds_json)
     all_fields_d = collect_fields(ds_json)
     all_field_values_d = collect_field_values(all_fields_d, fileset_d)
     resolve_references(all_fields_d, all_field_values_d)
-
-    base_name = ds_json["schema:name"]
-    base_info = DatasetInfo(
-        description=ds_json["schema:description"],
-        citation=ds_json["citeAs"],
-        license=ds_json["schema:license"],
-        #keywords=ds_json["schema:keywords"],
-    )
     for record_set in ds_json.get("recordSet", []):
         rs_name = record_set["schema:name"]
         rs_id = record_set["@id"]
@@ -290,20 +325,31 @@ def main() -> None:
             if factory.test():
                 for df in factory:
                     rs_transcribed = True
-                    print(f"{df}")
-                    dataset = Dataset.from_pandas(df, info=base_info)
+                    dataset = Dataset.from_pandas(df)
                     count_str = f"- {int(rs_ds_count) + 1}" if rs_ds_count else ""
-                    repo_id = f"HuBMAP/{base_name}"
                     config_name = f"{rs_name}{count_str}"
                     if dry_run:
                         LOGGER.info(f"Dry run ; skipping push of {repo_id} {config_name}")
                     else:
                         dataset.push_to_hub(repo_id=repo_id, config_name=config_name)
                     rs_ds_count += 1
-        if not rs_transcribed:
+        if rs_transcribed:
+            LOGGER.info(f"{rs_ds_count} datasets were transcribed from RecordSet {rs_name} {rs_id}")
+        else:
             LOGGER.info(f"RecordSet {rs_name} {rs_id} was not transcribed")
 
-
+    readme_str = build_readme(ds_json)
+    if dry_run:
+        LOGGER.info("Dry run; not installing the following readme.md:")
+        LOGGER.info(f"{readme_str}")
+    else:
+        api = HfApi()
+        api.upload_file(
+            path_or_fileobj=io.BytesIO(readme_str.encode("utf-8")),
+            path_in_repo="README.md",
+            repo_id=repo_id,
+            repo_type="dataset"
+        )
 
 if __name__ == "__main__":
     main()
