@@ -2,14 +2,13 @@
 """Utilities for pushing data containers to Hugging Face."""
 from __future__ import annotations
 
-import argparse
 import logging
-import os
 from collections import defaultdict
+from collections.abc import Generator
 from typing import Any
 
 import dask.array as da
-import dask.dataframe as dd
+import mlcroissant as mlc
 import numpy as np
 import pandas as pd
 
@@ -24,6 +23,7 @@ class BaseDataFrameFactory:
     """Provide a base class for a set of classes to handle multiple field configurations."""
 
     def __init__(self, field_list: list[mlc.Field], field_value_dict: dict[str, Any]):
+        """Initialize the base class."""
         self.field_list = field_list
         self.field_value_dict = field_value_dict
 
@@ -31,10 +31,12 @@ class BaseDataFrameFactory:
         """Test if this class is suitable for the given list of fields."""
         return False
 
-    def __iter__(self) -> Generator(None, None, None):
+    def __iter__(self) -> Generator[None, None, None]:
+        """Yield no Generators for the base class."""
         yield None
 
     def count_field_types(self) -> defaultdict[type, int]:
+        """Produce a dict mapping field types to counts of fields of each type."""
         fld_val_tp_cnts = defaultdict(int)
         for fld in self.field_list:
             fld_id = fld["@id"]
@@ -44,8 +46,10 @@ class BaseDataFrameFactory:
 
 
 class ExpressionMatrixDataFrameFactory(BaseDataFrameFactory):
+    """Provide a class which produces a dataframe from an array of elements."""
+
     def test(self) -> bool:
-        """Test if this class is suitable for the given list of fields."""
+        """Test if the provided fields include an array and two indices."""
         tp_cts = self.count_field_types()
         if tp_cts[pd.core.indexes.base.Index] == 2 and (
             tp_cts[da.core.Array] == 1 or tp_cts[np.ndarray] == 1
@@ -53,7 +57,8 @@ class ExpressionMatrixDataFrameFactory(BaseDataFrameFactory):
             return True
         return False
 
-    def __iter__(self) -> Generator(None, None, None):
+    def __iter__(self) -> Generator[None, None, None]:
+        """Yield one generator for the single DataFrame produced by the array field."""
         array_field = [
             fld
             for fld in self.field_list
@@ -90,8 +95,10 @@ class ExpressionMatrixDataFrameFactory(BaseDataFrameFactory):
 
 
 class SeriesListDataFrameFactory(BaseDataFrameFactory):
+    """Provide a class which produces a dataframe from a list of series."""
+
     def test(self) -> bool:
-        """Test if this class is suitable for the given list of fields."""
+        """Test if the provided fields include an index and one or more series."""
         tp_cts = self.count_field_types()
         if tp_cts[pd.core.indexes.base.Index] == 1 and (
             tp_cts[pd.core.series.Series] >= 1
@@ -99,7 +106,8 @@ class SeriesListDataFrameFactory(BaseDataFrameFactory):
             return True
         return False
 
-    def __iter__(self) -> Generator(None, None, None):
+    def __iter__(self) -> Generator[None, None, None]:
+        """Yield one generator for the single DataFrame produced by the obs elements."""
         index_field = [
             fld
             for fld in self.field_list
