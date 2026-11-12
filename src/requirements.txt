@@ -9,3 +9,5 @@ git+https://github.com/hubmapconsortium/cwltool.git@docker-gpu#egg=cwltool
 setuptools<82
 huggingface_hub>=2.4.0
 datasets>=5.1.0
+jsonpath-ng
+zarr>=3
