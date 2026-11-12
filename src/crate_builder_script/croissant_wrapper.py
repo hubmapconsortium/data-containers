@@ -6,51 +6,23 @@ from pathlib import Path
 from pprint import pformat
 
 import mlcroissant as mlc
+from anndata_zarr_tools import anndata_zarr_detector
 from api_calls import asset_url, entity_iri, fetch_entity_info
+from edam_tables import EDAM_INFO
 from extractors import WrappedEntity
+from utils import (
+    get_sha256_from_url,
+    rel_path_to_id,
+)
 
 LOGGER = logging.getLogger(__name__)
 
-EDAM_INFO = {
-    ("EDAM_1.24.format_3727", None): {"desc": "tiff", "mime": "image/tiff"},
-    ("EDAM_1.24.format_3464", None): {"desc": "json", "mime": "application/json"},
-    ("EDAM_1.24.format_3508", None): {"desc": "pdf", "mime": "application/pdf"},
-    ("EDAM_1.24.format_3590", None): {"desc": "hdf5", "mime": "application/x-hdf5"},
-    ("EDAM_1.24.format_3987", None): {"desc": "zip", "mime": "application/zip"},
-    ("EDAM_1.24.format_3752", None): {"desc": "csv", "mime": "text/csv"},
-    ("EDAM_1.24.format_3755", None): {
-        "desc": "tsv",
-        "mime": "text/tab-separated-values",
-    },
-    ("EDAM_1.24.format_3790", None): {
-        "desc": "h5ad (anndata)",
-        "mime": "application/x-hdf5",
-    },
-    ("EDAM_1.24.format_3915", None): {"desc": "zarr", "mime": "application/vnd.zarr"},
-    ("EDAM_1.24.format_4006", None): {
-        "desc": "zarr (spatialdata)",
-        "mime": "application/vnd.zarr",
-    },
-    ("EDAM_1.24.data_3671", None): {"desc": "plain text", "mime": "text/plain"},
-    ("EDAM_1.24.format_3916", ".mtx"): {
-        "desc": "adjacency matrix",
-        "mime": "text/plain",
-    },
-    (None, ".html"): {"desc": "unknown but html encoded", "mime": "text/html"},
-    (None, ".tsv"): {
-        "desc": "unknown but tsv encoded",
-        "mime": "text/tab-separated-values",
-    },
-    (None, ".csv"): {"desc": "unknown but csv encoded", "mime": "text/csv"},
-    ("EDAM_1.24.format_2333", None): {
-        "desc": "binary format",
-        "mime": "application/octet-stream",
-    },
-    ("EDAM_1.24.format_3003", None): {
-        "desc": "BED (Browser Extensible Data)",
-        "mime": "text/x-bed",
-    },
-}
+
+def detect_recordset_root(ds_uuid: str, rel_path: str) -> dict | None:
+    """If rel_path is a fileset root, return appropriate RecordSet info."""
+    if rslt := anndata_zarr_detector(ds_uuid, rel_path):
+        return rslt
+    return None
 
 
 def _ts_to_iso(ms):
@@ -303,17 +275,19 @@ class CroissantWrapper:
     def add_file(self, ds_uuid: str, file_info: dict, file_blk: dict | None) -> None:
         """Define and describe a single file in the dataset."""
         args = {
-            "id": file_info["rel_path"],
+            "id": rel_path_to_id(file_info["rel_path"]),
             "name": file_info["rel_path"],
             "description": file_info["description"],
             "content_url": asset_url(ds_uuid, file_info["rel_path"]),
         }
+
         path_ext = Path(file_info["rel_path"]).suffix
+        LOGGER.info(f"EDAM lookup {file_info.get('edam_term')} <{path_ext}>")
         if edam := file_info.get("edam_term"):
-            if (edam, None) in EDAM_INFO:
-                args["encoding_formats"] = [EDAM_INFO[(edam, None)]["mime"]]
-            elif (edam, path_ext) in EDAM_INFO:
+            if (edam, path_ext) in EDAM_INFO:
                 args["encoding_formats"] = [EDAM_INFO[(edam, path_ext)]["mime"]]
+            elif (edam, None) in EDAM_INFO:
+                args["encoding_formats"] = [EDAM_INFO[(edam, None)]["mime"]]
             elif (None, path_ext) in EDAM_INFO:
                 args["encoding_formats"] = [EDAM_INFO[(None, path_ext)]["mime"]]
             else:
@@ -323,10 +297,32 @@ class CroissantWrapper:
             args["encoding_formats"] = ["application/octet-stream"]
         if file_blk:
             args["sha256"] = file_blk["sha256_checksum"]
+        else:
+            args["sha256"] = get_sha256_from_url(args["content_url"])
+        LOGGER.info(f"args for {file_info['rel_path']} info:\n{pformat(args)}")
+        LOGGER.info(f"file_info is:\n{pformat(file_info)}")
         self.file_objects.append(mlc.FileObject(**args))
 
-    # def add_record_set(self, record_set: mlc.RecordSet):
-    #     self.record_sets.append(record_set)
+    def add_recordset_from_root(self, rs_info: dict) -> None:
+        """
+        Add one or more recordsets, and a fileset if necessary.
+
+        rs_info is a dict returned by detect_recordset_root().
+        """
+        if fileset_func := rs_info.get("fileset_func"):
+            self._add_fileset(fileset_func(rs_info))
+        if recordset_func := rs_info.get("recordset_func"):
+            rs_info_list = recordset_func(rs_info)
+            for rs_info in rs_info_list:
+                self._add_recordset(rs_info)
+
+    def _add_fileset(self, fs_info: dict) -> None:
+        """Add a FileSet using info returned by detect_recordset_root()."""
+        self.file_objects.append(mlc.FileSet(**fs_info))
+
+    def _add_recordset(self, rs_info: dict) -> None:
+        """Add a RecordSet."""
+        self.record_sets.append(mlc.RecordSet(**rs_info))
 
     def write(self, croissant_filename: str):
         """Write the Croissant file."""

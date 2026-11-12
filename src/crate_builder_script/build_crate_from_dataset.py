@@ -14,7 +14,7 @@ from api_calls import (
     fetch_entity_info,
     fetch_uuid_files_info,
 )
-from croissant_wrapper import CroissantWrapper
+from croissant_wrapper import CroissantWrapper, detect_recordset_root
 from extractors import WrappedEntity
 from rocrate.model import (
     ComputerLanguage,
@@ -62,13 +62,13 @@ DEFAULT_INGEST_PIPELINE_URL = "https://github.com/hubmapconsortium/ingest-pipeli
 # - the workflow_instance lacks start and end dates
 # - "homo sapiens" is hard-coded into the keywords.  That will have to be
 #   fixed for SenNet.
-# - unpublished examples:
 #   TARGET_ID = "HBM567.VCBK.562"
 #   TARGET_ID = "HBM487.HJZB.546"  # primary dataset
 # - published examples:
 #   TARGET_ID = "HBM866.VMBK.952"
 #   TARGET_ID = "HBM473.QLDT.264"  # primary dataset
 #   TARGET_ID = "HBM748.CHWC.963"  # derived from snare-seq
+#   TARGET_ID = "HBM953.LMWQ.235"  # CODEX processed with zipped Zarr
 ###############
 
 
@@ -522,6 +522,7 @@ def main() -> None:
     blk_idx = {}
     for file_blk in uuid_files:
         blk_idx[file_blk["path"]] = file_blk
+    LOGGER.info(f"blk_idx is:\n{pformat(blk_idx, depth=1)}")
 
     # The dataset DOIs point to the Portal, which is basically a landing page, which is
     # forbidden as the direct link for a dataset under FAIR.  So we can't use the DOI
@@ -586,10 +587,12 @@ def main() -> None:
     if "files" in ds_entity:
         # This is a derived dataset- include only data products and qa_qc files
         for fl in ds_entity["files"]:
+            recordset_args = detect_recordset_root(ds_entity["uuid"], fl["rel_path"])
             if (
                 fl.get("is_data_product", False)
                 or fl.get("is_qa_qc", False)
                 or include_all_files
+                or recordset_args
             ):
                 LOGGER.debug(f"Adding {fl['rel_path']}")
                 crate.add_file(
@@ -598,6 +601,8 @@ def main() -> None:
                 wrapped_croissant.add_file(
                     ds_entity["uuid"], fl, blk_idx.get(fl["rel_path"])
                 )
+                if recordset_args:
+                    wrapped_croissant.add_recordset_from_root(recordset_args)
             else:
                 LOGGER.debug(f"{fl['rel_path']} is not a data product or qa_qc")
     else:
