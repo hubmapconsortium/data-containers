@@ -3,42 +3,30 @@
 from __future__ import annotations
 
 import argparse
-import os
 import io
-from collections import defaultdict
+import json
+import logging
+import os
+from pprint import pformat
+from typing import Any
+from zipfile import ZipFile
 
 import dask.array as da
-import dask.dataframe as dd
-from datasets import Dataset
-from huggingface_hub import HfApi
-import pandas as pd
-import numpy as np
-import scanpy as sc
-import zarr
-import logging
-from zipfile import ZipFile
-import json
-import yaml
-
-from typing import Any
-
-from anndata import AnnData
-from anndata.experimental import read_dispatched, StorageType
-from anndata.io import read_elem
-
-from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
-from fsspec.implementations.zip import ZipFileSystem
-
 import mlcroissant as mlc
-
-from pprint import pformat
-
-from jsonpath_ng import parse
-
+import yaml
+import zarr
+from anndata import AnnData
+from anndata.experimental import StorageType, read_dispatched
+from anndata.io import read_elem
 from dataframe_factories import (
     ExpressionMatrixDataFrameFactory,
     SeriesListDataFrameFactory,
 )
+from datasets import Dataset
+from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
+from fsspec.implementations.zip import ZipFileSystem
+from huggingface_hub import HfApi
+from jsonpath_ng import parse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,7 +52,7 @@ class SafeZipFileSystem(ZipFileSystem):
             raise FileNotFoundError(path) from e
 
 
-def create_zip_zarr_store(url: str, token: str=None) -> StorageType:
+def create_zip_zarr_store(url: str, token: str = None) -> StorageType:
     """Open a remote zipped zarr file via URL."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     fs = SafeZipFileSystem(
@@ -80,6 +68,7 @@ def create_zip_zarr_store(url: str, token: str=None) -> StorageType:
 
 
 def read_dask(store: StorageType) -> AnnData:
+    """Produce an AnnData from a Zarr store with Dask."""
 
     def callback(func, elem_name: str, elem, iospec):
         if iospec.encoding_type in (
@@ -100,39 +89,57 @@ def read_dask(store: StorageType) -> AnnData:
 
 
 def adata_from_filesets(ds_json: dict[str, Any]) -> dict[str, AnnData]:
+    """Build AnnData objects for all filesets."""
     rslt = {}
-    for file_set in [elt for elt in ds_json["schema:distribution"] if elt["@type"] == "cr:FileSet"]:
+    for file_set in [
+        elt for elt in ds_json["schema:distribution"] if elt["@type"] == "cr:FileSet"
+    ]:
         fs_id = file_set["@id"]
         contained_in = file_set["schema:containedIn"]["@id"]
-        if (encoding_format := file_set.get("schema:encodingFormat")) == "application/x-zarr":
-            container = [elt for elt in ds_json["schema:distribution"] if elt["@id"] == contained_in][0]
+        if (
+            encoding_format := file_set.get("schema:encodingFormat")
+        ) == "application/x-zarr":
+            container = [
+                elt
+                for elt in ds_json["schema:distribution"]
+                if elt["@id"] == contained_in
+            ][0]
             content_url = container["schema:contentUrl"]
             includes_str = file_set.get("includes")
             if content_url.endswith(".zip"):
-                assert includes_str == "*/*", f"Unexpected FileSet 'includes' value {includes_str}"
+                assert (
+                    includes_str == "*/*"
+                ), f"Unexpected FileSet 'includes' value {includes_str}"
                 store = zarr.open(
                     create_zip_zarr_store(content_url, token=os.environ["AUTH_TOK"]),
                     mode="r",
                 )
                 adata = read_dask(store)
             else:
-                assert includes_str == "../**/*", f"Unexpected FileSet 'includes' value {includes_str}"
+                assert (
+                    includes_str == "../**/*"
+                ), f"Unexpected FileSet 'includes' value {includes_str}"
                 offset = content_url.rfind("/")
                 base_url = content_url[:offset]
                 store = zarr.open(
-                        base_url, mode="r",
-                        storage_options={"headers": {"Authorization": f"Bearer {os.environ['AUTH_TOK']}"}}
-                        )
+                    base_url,
+                    mode="r",
+                    storage_options={
+                        "headers": {"Authorization": f"Bearer {os.environ['AUTH_TOK']}"}
+                    },
+                )
                 adata = read_dask(store)
             rslt[fs_id] = adata
             LOGGER.info(f"successfully accessed anndata from fileset {fs_id}")
         else:
-            LOGGER.error(f"Unrecognized encodingFormat {encoding_format} for fileset {fs_id}")
+            LOGGER.error(
+                f"Unrecognized encodingFormat {encoding_format} for fileset {fs_id}"
+            )
     return rslt
 
 
 def _get_part(obj: AnnData | dict, target: str) -> AnnData | dict:
-    """Works for both an AnnData object and a dict"""
+    """Works for both an AnnData object and a dict."""
     if hasattr(obj, target):
         return getattr(obj, target)
     else:
@@ -140,6 +147,7 @@ def _get_part(obj: AnnData | dict, target: str) -> AnnData | dict:
 
 
 def get_adata_by_jsonpath(adata: AnnData, path_str: str) -> Any:
+    """Given an AnnData, get a sub-part by JSON path."""
     path_segments = []
     current_expr = parse(path_str)
     while hasattr(current_expr, "left") and hasattr(current_expr, "right"):
@@ -161,6 +169,7 @@ def get_adata_by_jsonpath(adata: AnnData, path_str: str) -> Any:
 
 
 def read_croissant_json(target_crate: str) -> dict[str, Any]:
+    """Read the JSON from croissant.json, even if it is zipped."""
     if target_crate.endswith(".json"):
         ds = mlc.Dataset(target_crate)
     elif target_crate.endswith(".zip"):
@@ -170,11 +179,13 @@ def read_croissant_json(target_crate: str) -> dict[str, Any]:
                     json_blob = json.load(jsonf)
                 ds = mlc.Dataset(jsonld=json_blob)
             else:
-                raise RuntimeError(f"Zip file {target_crate} does not contain croissant.json")
+                raise RuntimeError(
+                    f"Zip file {target_crate} does not contain croissant.json"
+                )
     return ds.metadata.to_json()
 
 
-def collect_fields(ds_json: dict[str, Any]) -> dict[str, dictprin[str, Any]]:
+def collect_fields(ds_json: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Collect Field structures from all recordSets."""
     all_fields_d = {}
     for record_set in ds_json.get("recordSet", []):
@@ -185,9 +196,8 @@ def collect_fields(ds_json: dict[str, Any]) -> dict[str, dictprin[str, Any]]:
 
 
 def collect_field_values(
-        all_fields_d: dict[str, dict[str, Any]],
-        fileset_d: dict[str, AnnData]
-        ) -> dict[str, Any]:
+    all_fields_d: dict[str, dict[str, Any]], fileset_d: dict[str, AnnData]
+) -> dict[str, Any]:
     """
     Calculate and collect the values of known fields.
 
@@ -207,21 +217,29 @@ def collect_field_values(
                         if keykey == "@id":
                             assert ref_field_d["@id"] in all_fields_d
                         else:
-                            raise RuntimeError(f"Unexpected key {keykey} in references[field] for Field {fld_id}")
+                            raise RuntimeError(
+                                f"Unexpected key {keykey} in references[field] for Field {fld_id}"
+                            )
                 else:
-                    raise RuntimeError(f"Unexpected key {key} in references for Field {fld_id}")
+                    raise RuntimeError(
+                        f"Unexpected key {key} in references for Field {fld_id}"
+                    )
         else:
             try:
                 assert "source" in fld
                 assert "fileSet" in fld["source"] and "@id" in fld["source"]["fileSet"]
-                assert "extract" in fld["source"] and "jsonPath" in fld["source"]["extract"]
+                assert (
+                    "extract" in fld["source"]
+                    and "jsonPath" in fld["source"]["extract"]
+                )
             except AssertionError as excp:
-                LOGGER.error("Failed assertion on the following field:\n"
-                             f"{pformat(fld)}")
+                LOGGER.error(
+                    "Failed assertion on the following field:\n" f"{pformat(fld)}"
+                )
                 raise excp
             value = get_adata_by_jsonpath(
                 fileset_d[fld["source"]["fileSet"]["@id"]],
-                fld["source"]["extract"]["jsonPath"]
+                fld["source"]["extract"]["jsonPath"],
             )
             LOGGER.debug(f"{fld_id} yielded {type(value)}")
             all_field_values_d[fld_id] = value
@@ -229,9 +247,9 @@ def collect_field_values(
 
 
 def resolve_references(
-        all_fields_d: dict[str, dict[str, Any]],
-        all_field_values_d: dict[str, Any],
-        ) -> None:
+    all_fields_d: dict[str, dict[str, Any]],
+    all_field_values_d: dict[str, Any],
+) -> None:
     """Associate values with reference fields."""
     for fld_id in [elt for elt in all_fields_d if "references" in all_fields_d[elt]]:
         fld = all_fields_d[fld_id]
@@ -247,7 +265,7 @@ def license_to_hf_license(license: str) -> str:
     list of supported HF license strings.  If this function returns an
     invalid string the call to upload the README information will fail.
     """
-    suffix = license[license.rfind("/")+1:]
+    suffix = license[license.rfind("/") + 1 :]
     return suffix.lower()
 
 
@@ -262,11 +280,11 @@ def build_metadata(ds_json: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_readme(ds_json: dict[str, Any]) -> str:
+    """Build a HF-specific README.md from the dataset's croissant JSON."""
     md_info = build_metadata(ds_json)
     LOGGER.debug(f"Metadata:\n{pformat(md_info)}")
 
-    descr = (ds_json["schema:description"]
-             .replace("[", r"\[").replace("]", r"\]"))
+    descr = ds_json["schema:description"].replace("[", r"\[").replace("]", r"\]")
     with io.StringIO() as readme_fo:
         readme_fo.write("---\n")
         yaml.dump(md_info, readme_fo)
@@ -276,7 +294,7 @@ def build_readme(ds_json: dict[str, Any]) -> str:
         readme_str = readme_fo.getvalue()
     return readme_str
 
-    
+
 def main() -> None:
     """Parse command line and carry out construction of the RO-Crate and Croissant files."""
     parser = argparse.ArgumentParser()
@@ -290,7 +308,7 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Build internal data structures but do not actually upload anything to HF"
+        help="Build internal data structures but do not actually upload anything to HF",
     )
     args = parser.parse_args()
     target_crate = args.target_crate
@@ -301,13 +319,13 @@ def main() -> None:
         LOGGER.setLevel(logging.DEBUG)
         logging.getLogger("requests").setLevel(logging.DEBUG)
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
-        #logging.getLogger("datafame_factories").setLevel(logging.DEBUG)
+        # logging.getLogger("datafame_factories").setLevel(logging.DEBUG)
 
     ds_json = read_croissant_json(target_crate)
 
     base_name = ds_json["schema:name"]
     repo_id = f"HuBMAP/{base_name}"
-    
+
     fileset_d = adata_from_filesets(ds_json)
     all_fields_d = collect_fields(ds_json)
     all_field_values_d = collect_field_values(all_fields_d, fileset_d)
@@ -329,12 +347,16 @@ def main() -> None:
                     count_str = f"- {int(rs_ds_count) + 1}" if rs_ds_count else ""
                     config_name = f"{rs_name}{count_str}"
                     if dry_run:
-                        LOGGER.info(f"Dry run ; skipping push of {repo_id} {config_name}")
+                        LOGGER.info(
+                            f"Dry run ; skipping push of {repo_id} {config_name}"
+                        )
                     else:
                         dataset.push_to_hub(repo_id=repo_id, config_name=config_name)
                     rs_ds_count += 1
         if rs_transcribed:
-            LOGGER.info(f"{rs_ds_count} datasets were transcribed from RecordSet {rs_name} {rs_id}")
+            LOGGER.info(
+                f"{rs_ds_count} datasets were transcribed from RecordSet {rs_name} {rs_id}"
+            )
         else:
             LOGGER.info(f"RecordSet {rs_name} {rs_id} was not transcribed")
 
@@ -348,8 +370,9 @@ def main() -> None:
             path_or_fileobj=io.BytesIO(readme_str.encode("utf-8")),
             path_in_repo="README.md",
             repo_id=repo_id,
-            repo_type="dataset"
+            repo_type="dataset",
         )
+
 
 if __name__ == "__main__":
     main()
