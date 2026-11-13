@@ -269,14 +269,16 @@ def license_to_hf_license(license: str) -> str:
     return suffix.lower()
 
 
-def build_metadata(ds_json: dict[str, Any], config_list: list[dict[str, Any]]) -> dict[str, Any]:
+def build_metadata(
+    ds_json: dict[str, Any], config_list: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Construct the metadata that goes in the YAML block of the readme.md file."""
     return {
         "description": ds_json["schema:description"],
         "citation": ds_json["citeAs"],
         "license": license_to_hf_license(ds_json["schema:license"]),
         "tags": ds_json["schema:keywords"],
-        "configs": config_list
+        "configs": config_list,
     }
 
 
@@ -348,13 +350,14 @@ def main() -> None:
                     dataset = Dataset.from_pandas(df)
                     count_str = f"- {int(rs_ds_count) + 1}" if rs_ds_count else ""
                     config_name = f"{rs_name}{count_str}"
-                    config_list.append({
-                        "config_name": config_name,
-                        "data_files": [{
-                            "split": "train",
-                            "path": f"{config_name}/train-*"
-                        }]
-                    })
+                    config_list.append(
+                        {
+                            "config_name": config_name,
+                            "data_files": [
+                                {"split": "train", "path": f"{config_name}/train-*"}
+                            ],
+                        }
+                    )
                     if dry_run:
                         LOGGER.info(
                             f"Dry run ; skipping push of {repo_id} {config_name}"
