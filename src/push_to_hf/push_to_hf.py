@@ -269,19 +269,20 @@ def license_to_hf_license(license: str) -> str:
     return suffix.lower()
 
 
-def build_metadata(ds_json: dict[str, Any]) -> dict[str, Any]:
+def build_metadata(ds_json: dict[str, Any], config_list: list[dict[str, Any]]) -> dict[str, Any]:
     """Construct the metadata that goes in the YAML block of the readme.md file."""
     return {
         "description": ds_json["schema:description"],
         "citation": ds_json["citeAs"],
         "license": license_to_hf_license(ds_json["schema:license"]),
         "tags": ds_json["schema:keywords"],
+        "configs": config_list
     }
 
 
-def build_readme(ds_json: dict[str, Any]) -> str:
+def build_readme(ds_json: dict[str, Any], config_list: list[dict[str, Any]]) -> str:
     """Build a HF-specific README.md from the dataset's croissant JSON."""
-    md_info = build_metadata(ds_json)
+    md_info = build_metadata(ds_json, config_list)
     LOGGER.debug(f"Metadata:\n{pformat(md_info)}")
 
     descr = ds_json["schema:description"].replace("[", r"\[").replace("]", r"\]")
@@ -330,6 +331,7 @@ def main() -> None:
     all_fields_d = collect_fields(ds_json)
     all_field_values_d = collect_field_values(all_fields_d, fileset_d)
     resolve_references(all_fields_d, all_field_values_d)
+    config_list = []
     for record_set in ds_json.get("recordSet", []):
         rs_name = record_set["schema:name"]
         rs_id = record_set["@id"]
@@ -346,12 +348,22 @@ def main() -> None:
                     dataset = Dataset.from_pandas(df)
                     count_str = f"- {int(rs_ds_count) + 1}" if rs_ds_count else ""
                     config_name = f"{rs_name}{count_str}"
+                    config_list.append({
+                        "config_name": config_name,
+                        "data_files": [{
+                            "split": "train",
+                            "path": f"{config_name}/train-*"
+                        }]
+                    })
                     if dry_run:
                         LOGGER.info(
                             f"Dry run ; skipping push of {repo_id} {config_name}"
                         )
                     else:
                         dataset.push_to_hub(repo_id=repo_id, config_name=config_name)
+                        LOGGER.info(
+                            f"Pushed {repo_id} {config_name} to HuggingFace hub"
+                        )
                     rs_ds_count += 1
         if rs_transcribed:
             LOGGER.info(
@@ -360,7 +372,7 @@ def main() -> None:
         else:
             LOGGER.info(f"RecordSet {rs_name} {rs_id} was not transcribed")
 
-    readme_str = build_readme(ds_json)
+    readme_str = build_readme(ds_json, config_list)
     if dry_run:
         LOGGER.info("Dry run; not installing the following readme.md:")
         LOGGER.info(f"{readme_str}")
