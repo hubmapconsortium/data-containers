@@ -34,6 +34,17 @@ logging.basicConfig(
 
 LOGGER = logging.getLogger(__name__)
 
+#
+# These DataFrameFactory classes translate RecordSets to HF tables.
+# The table created by the first applicable type will be identified
+# as the 'default' table in the HF Dataset Viewer, so these classes
+# should be arranged with the highest priority first.
+#
+FACTORY_TYPES = [
+    ExpressionMatrixDataFrameFactory,
+    SeriesListDataFrameFactory,
+]
+
 
 # Temporarily copied from anndata_zarr_tools in the phenocycler-to-hf branch
 # until that branch gets merged
@@ -339,10 +350,7 @@ def main() -> None:
         rs_id = record_set["@id"]
         rs_transcribed = False
         rs_ds_count = 0
-        for factory_type in [
-            ExpressionMatrixDataFrameFactory,
-            SeriesListDataFrameFactory,
-        ]:
+        for factory_type in FACTORY_TYPES:
             factory = factory_type(record_set["field"], all_field_values_d)
             if factory.test():
                 for df in factory:
@@ -375,6 +383,8 @@ def main() -> None:
         else:
             LOGGER.info(f"RecordSet {rs_name} {rs_id} was not transcribed")
 
+    if config_list:
+        config_list[0]["default"] = True  # set default data table
     readme_str = build_readme(ds_json, config_list)
     if dry_run:
         LOGGER.info("Dry run; not installing the following readme.md:")
