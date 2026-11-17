@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pprint import pformat
 from typing import Any
 
-from api_calls import fetch_entity_info
+from .api_calls import fetch_entity_info
 
 LOGGER = logging.getLogger(__name__)
 

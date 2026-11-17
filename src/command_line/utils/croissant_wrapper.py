@@ -6,11 +6,11 @@ from pathlib import Path
 from pprint import pformat
 
 import mlcroissant as mlc
-from anndata_zarr_tools import anndata_zarr_detector
-from api_calls import asset_url, entity_iri, fetch_entity_info
-from edam_tables import EDAM_INFO
-from extractors import WrappedEntity
-from utils import (
+from .anndata_zarr_tools import anndata_zarr_detector
+from .api_calls import asset_url, entity_iri, fetch_entity_info
+from .edam_tables import EDAM_INFO
+from .extractors import WrappedEntity
+from .utils import (
     get_sha256_from_url,
     rel_path_to_id,
 )

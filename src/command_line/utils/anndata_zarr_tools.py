@@ -9,10 +9,10 @@ import mlcroissant as mlc
 import pandas as pd
 import zarr
 from anndata.io import read_elem
-from api_calls import asset_url
+from .api_calls import asset_url
 from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
 from fsspec.implementations.zip import ZipFileSystem
-from utils import FILESET_KEYWORDS, rel_path_to_id, safe_id
+from .utils import FILESET_KEYWORDS, rel_path_to_id, safe_id
 
 LOGGER = logging.getLogger(__name__)
 

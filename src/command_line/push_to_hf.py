@@ -18,7 +18,7 @@ import zarr
 from anndata import AnnData
 from anndata.experimental import StorageType, read_dispatched
 from anndata.io import read_elem
-from dataframe_factories import (
+from utils.dataframe_factories import (
     ExpressionMatrixDataFrameFactory,
     SeriesListDataFrameFactory,
 )

@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Build an RO-Crate and a Croissant for a dataset."""
 import argparse
 import logging
@@ -8,14 +9,14 @@ from pprint import pformat
 from tempfile import TemporaryDirectory
 from typing import List
 
-from api_calls import (
+from utils.api_calls import (
     HUBMAP_ORG_ENTITY,
     asset_url,
     fetch_entity_info,
     fetch_uuid_files_info,
 )
-from croissant_wrapper import CroissantWrapper, detect_recordset_root
-from extractors import WrappedEntity
+from utils.croissant_wrapper import CroissantWrapper, detect_recordset_root
+from utils.extractors import WrappedEntity
 from rocrate.model import (
     ComputerLanguage,
     ContextEntity,
