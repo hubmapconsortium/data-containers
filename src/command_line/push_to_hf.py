@@ -22,6 +22,10 @@ from utils.dataframe_factories import (
     ExpressionMatrixDataFrameFactory,
     SeriesListDataFrameFactory,
 )
+from utils.anndata_zarr_tools import (
+    SafeZipFileSystem,
+    open_zip_zarr_store
+)
 from datasets import Dataset
 from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
 from fsspec.implementations.zip import ZipFileSystem
@@ -44,38 +48,6 @@ FACTORY_TYPES = [
     ExpressionMatrixDataFrameFactory,
     SeriesListDataFrameFactory,
 ]
-
-
-# Temporarily copied from anndata_zarr_tools in the phenocycler-to-hf branch
-# until that branch gets merged
-class SafeZipFileSystem(ZipFileSystem):
-    """
-    Define ZipFileSystem with better FileNoteFound behavior.
-
-    zarr 3 treats FileNotFoundError as "key absent"; ZipFileSystem raises KeyError,
-    which breaks zarr's probes for optional metadata files.
-    """
-
-    def _open(self, path, mode="rb", *args, **kwargs):
-        try:
-            return super()._open(path, mode, *args, **kwargs)
-        except KeyError as e:
-            raise FileNotFoundError(path) from e
-
-
-def create_zip_zarr_store(url: str, token: str = None) -> StorageType:
-    """Open a remote zipped zarr file via URL."""
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    fs = SafeZipFileSystem(
-        fo=url,
-        target_protocol="https",  # NOT remote_protocol/remote_options: silently ignored
-        target_options={"client_kwargs": {"headers": headers}},
-    )
-    # zarr 3's FsspecStore needs an async filesystem; ZipFileSystem is sync.
-    store = zarr.storage.FsspecStore(
-        AsyncFileSystemWrapper(fs, asynchronous=True), read_only=True
-    )
-    return store
 
 
 def read_dask(store: StorageType) -> AnnData:
@@ -122,7 +94,7 @@ def adata_from_filesets(ds_json: dict[str, Any]) -> dict[str, AnnData]:
                     includes_str == "*/*"
                 ), f"Unexpected FileSet 'includes' value {includes_str}"
                 store = zarr.open(
-                    create_zip_zarr_store(content_url, token=os.environ["AUTH_TOK"]),
+                    open_zip_zarr_store(content_url, token=os.environ["AUTH_TOK"]),
                     mode="r",
                 )
                 adata = read_dask(store)

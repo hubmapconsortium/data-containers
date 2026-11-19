@@ -8,24 +8,30 @@ from typing import Any
 import mlcroissant as mlc
 import pandas as pd
 import zarr
+from anndata import AnnData, read_h5ad
 from anndata.io import read_elem
 from .api_calls import asset_url
+from fsspec import open as fsspec_open
 from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
 from fsspec.implementations.zip import ZipFileSystem
+from fsspec.implementations.http import HTTPFileSystem
 from .utils import FILESET_KEYWORDS, rel_path_to_id, safe_id
 
 LOGGER = logging.getLogger(__name__)
 
 ANNDATA_ZARR_RE = re.compile(r"(anndata-zarr/.*anndata.zarr)(/.zgroup)")
 ANNDATA_ZARR_ZIP_RE = re.compile(r"(anndata-zarr/.*anndata.zarr.zip)")
+ANNDATA_H5AD_RE = re.compile(r"([^/]*\.h5ad)")
 
 PANDAS_TO_CROISSANT_TYPES = {
     "int64": mlc.DataType.INTEGER,
     "uint8": mlc.DataType.INTEGER,
     "float64": mlc.DataType.FLOAT,
+    "float32": mlc.DataType.FLOAT,
     "bool": mlc.DataType.BOOL,
     "object": mlc.DataType.TEXT,
     "string": mlc.DataType.TEXT,
+    "category": mlc.DataType.TEXT,
 }
 
 
@@ -63,6 +69,24 @@ def open_zip_zarr_store(url, token=None):
     return store
 
 
+def open_h5ad(url: str, auth_tok: str | None = None) -> AnnData:
+    headers = {"Authorization": f"Bearer {auth_tok}"} if auth_tok else {}
+    fs = HTTPFileSystem(
+        headers=headers,
+        block_size=1024*1024,
+        # asynchronous=True
+    )
+    print(f"POINT 1 {url}")
+    return read_h5ad(fs.open(url, mode="rb"))
+    # return read_h5ad(AsyncFileWrapper(f, asynchronous=True))
+    # with fsspec_open(url,
+    #                  mode="rb",
+    #                  target_protocol="https",
+    #                  headers={"Authorization": f"Bearer {auth_tok}"}
+    #                 ) as f:
+    #     return read_h5ad(AsyncFileSystemWrapper(f, asynchronous=True))
+
+
 def anndata_zarr_fs_func(fs_info: dict) -> dict:
     """Generate a FileSet for anndata_zarr."""
     rslt = {key: fs_info[key] for key in FILESET_KEYWORDS}
@@ -73,6 +97,8 @@ def anndata_zarr_fs_func(fs_info: dict) -> dict:
 def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     """Generate a RecordSet for anndata_zarr."""
     id_base = rs_info["id"]
+    if id_base.endswith("/"):
+        id_base = id_base[:-1]  # strip trailing slash
     obs_dtypes = rs_info.get("obs_dtypes", {})
     X_shape = rs_info.get("X_shape", (-1, -1))
 
@@ -186,7 +212,7 @@ def anndata_zarr_rs_func(rs_info: dict) -> list[dict]:
     return rslt
 
 
-def test_zarr_element_not_empty(key: str, elem: Any) -> None:
+def test_element_not_empty(key: str, elem: Any) -> None:
     """Raise a warning/error if a zarr element is unexpectedly not empty."""
     if isinstance(elem, pd.DataFrame):
         if len(elem):
@@ -210,7 +236,8 @@ def anndata_zarr_detector(ds_uuid: str, rel_path: str) -> dict | None:
     """If rel_path is an anndata_zarr root, return appropriate RecordSet info."""
     re_match_fs = ANNDATA_ZARR_RE.match(rel_path)
     re_match_zip = ANNDATA_ZARR_ZIP_RE.match(rel_path)
-    re_match_any = re_match_fs or re_match_zip
+    re_match_h5ad = ANNDATA_H5AD_RE.match(rel_path)
+    re_match_any = re_match_fs or re_match_zip or re_match_h5ad
     if re_match_any:
         # Information which directly describes the FileSet and can
         # be used to derive the RecordSets
@@ -248,7 +275,7 @@ def anndata_zarr_detector(ds_uuid: str, rel_path: str) -> dict | None:
                     },
                 )
                 elem = read_elem(store)
-                test_zarr_element_not_empty(elt, elem)
+                test_element_not_empty(elt, elem)
         elif re_match_zip:
             zarr_store = open_zip_zarr_store(zarr_url, token=auth_tok)
             zarr_group = zarr.open_group(zarr_store, mode="r", use_consolidated=False)
@@ -260,7 +287,23 @@ def anndata_zarr_detector(ds_uuid: str, rel_path: str) -> dict | None:
             for elt in ["varm", "varp", "obsm", "obsp", "uns"]:
                 if elt in zarr_group:
                     elem = read_elem(zarr_group[elt])
-                    test_zarr_element_not_empty(elt, elem)
+                    test_element_not_empty(elt, elem)
+        elif re_match_h5ad:
+            print(f"HERE {anchor_id} {zarr_url}")
+            adata = open_h5ad(zarr_url, auth_tok=auth_tok)
+            print("Opened adata")
+            zarr_obs_elem = adata.obs
+            zarr_var_elem = adata.var
+            include_str = "*"
+            # We have no examples of the following, but they may be info we
+            # ultimately want to capture
+            for elt in ["X", "obs", "var", "varm", "varp", "obsm", "obsp", "uns"]:
+                if hasattr(adata, elt):
+                    print(f"found {elt} in adata")
+                    elem = getattr(adata, elt)
+                    test_element_not_empty(elt, elem)
+                else:
+                    print(f"{elt} is not in adata")
         else:
             raise RuntimeError("Internal Error opening remote zarr")
 

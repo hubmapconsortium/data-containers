@@ -70,6 +70,8 @@ DEFAULT_INGEST_PIPELINE_URL = "https://github.com/hubmapconsortium/ingest-pipeli
 #   TARGET_ID = "HBM473.QLDT.264"  # primary dataset
 #   TARGET_ID = "HBM748.CHWC.963"  # derived from snare-seq
 #   TARGET_ID = "HBM953.LMWQ.235"  # CODEX processed with zipped Zarr
+#   TARGET_ID = "HBM989.FSPK.593"  # snRNAseq [salmon]
+#   TARGET_ID = "HBM546.GJNP.882"  # CODEX with category data (QA)
 ###############
 
 
